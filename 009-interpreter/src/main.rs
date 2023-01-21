@@ -3,6 +3,7 @@ use std::rc::Rc;
 mod lexer;
 mod ast;
 mod parser;
+mod interpreter;
 
 fn main() {
     println!("Hello, world!");
@@ -13,7 +14,6 @@ fn main() {
     //";
 
     let code = "let add = L(a: Int, b: Int) -> a + b in add(21, 21)";
-
 
     let lexer = lexer::Lexer::new(0, code);
     let mut parser = parser::Parser::new(lexer);
@@ -39,5 +39,10 @@ fn main() {
     env.add("Type", ast::Type::Type(Rc::new(ast::Type::Type(Rc::new(ast::Type::Unkown)))));
     let ttype = ast.check_types(&mut env);
     println!("{:?}", ttype);
+    env.pop_scope();
+
+    let mut env = ast::Env::<interpreter::Value>::new();
+    env.push_scope();
+    println!("{:?}", ast.run(&mut env));
     env.pop_scope();
 }
