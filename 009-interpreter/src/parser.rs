@@ -60,6 +60,7 @@ impl<'input> Parser<'input> {
             None => return Err(Error::UnexpectedEOF)
         };
         match (tok, expected) {
+            (Tok::LeftParen(_), Tok::LeftParen(_)) => Ok(()),
             (Tok::RightParen(_), Tok::RightParen(_)) => Ok(()),
             (Tok::RightCurly(_), Tok::RightCurly(_)) => Ok(()),
             (Tok::RightSquare(_), Tok::RightSquare(_)) => Ok(()),
@@ -69,6 +70,7 @@ impl<'input> Parser<'input> {
             (Tok::Then(_), Tok::Then(_)) => Ok(()),
             (Tok::Else(_), Tok::Else(_)) => Ok(()),
             (Tok::Assign(_), Tok::Assign(_)) => Ok(()),
+            (Tok::ThinArrow(_), Tok::ThinArrow(_)) => Ok(()),
             (tok, expected) => Err(Error::UnexpectedToken(tok, expected))
         }
     }
@@ -162,7 +164,7 @@ impl<'input> Parser<'input> {
                     let ttype = self.parse_expr()?;
                     args.push((
                         self.stringify(id),
-                        Type::Unresolved(Box::new(ttype))));
+                        Type::Unresolved(Rc::new(ttype))));
                 }
 
                 self.expect(Tok::ThinArrow(NULLPOS))?;
