@@ -7,6 +7,8 @@ pub enum Value {
     Real(f64),
     Bool(bool),
     Str(Rc<String>),
+    Type(Type),
+    Kind,
     Lambda(Vec<Rc<String>>, Rc<Node>)
 }
 

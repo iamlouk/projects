@@ -2,13 +2,15 @@ use std::rc::Rc;
 use std::fmt::Write;
 use std::collections::HashMap;
 
-use crate::lexer::{Pos};
+use crate::lexer::Pos;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Unkown,
+    Kind,
     Unresolved(Rc<Node>),
     Type(Rc<Type>),
+    Generic(i64, Rc<String>),
     Int,
     Real,
     Bool,
@@ -21,19 +23,22 @@ pub enum TCError {
     Unresolvable(Pos),
     OperandsDoNotMatch(Pos),
     FunctionArgsDoNotMatch(Pos),
-    ExpectedBool(Pos)
+    ExpectedBool(Pos),
+    WrongNumberOfArgs(Pos),
 }
 
 impl Type {
     pub fn to_string(&self, out: &mut String) -> std::fmt::Result {
         match self {
             Self::Unkown => write!(out, "<?>"),
+            Self::Kind => write!(out, "<Kind>"),
             Self::Unresolved(x) => {
                 write!(out, "<")?;
                 x.to_string(out)?;
                 write!(out, ">")
             },
             Self::Type(_) => write!(out, "Type"),
+            Self::Generic(id, name) => write!(out, "Kind({}:{})", id, name.as_ref()),
             Self::Int => write!(out, "Int"),
             Self::Real => write!(out, "Real"),
             Self::Bool => write!(out, "Bool"),
@@ -55,26 +60,41 @@ impl Type {
         match self {
             Self::Unresolved(node) => match node.as_ref() {
                 Node::Id(md, name) => match env.lookup(name) {
-                    Some(Type::Type(t)) => Ok(t.as_ref().clone()),
-                    Some(_) => unimplemented!(),
+                    Some(Type::Type(t)) => t.as_ref().resolve(env),
+                    Some(Type::Kind) => Ok(Type::Kind),
+                    Some(t) => t.resolve(env),
                     None => Err(TCError::Unresolvable(md.pos))
                 },
                 _ => unimplemented!()
             },
-            _ => unimplemented!()
+            Self::Generic(_, name) => match env.lookup(name) {
+                Some(t) => Ok(t.clone()),
+                None => Err(TCError::Unresolvable((0, 0, 0)))
+            },
+            Self::Lambda(args, ret) => {
+                let mut nargs = Vec::with_capacity(args.len());
+                for arg in args {
+                    nargs.push(Rc::new(arg.resolve(env)?));
+                }
+                Ok(Type::Lambda(nargs, Rc::new(ret.resolve(env)?)))
+            },
+            Self::Type(t) => Ok(t.as_ref().clone()),
+            other => Ok(other.clone())
         }
     }
 }
 
 pub struct Env<V> {
     // TODO: Smarter DS with less copies:
-    scopes: Vec<HashMap<String, V>>
+    scopes: Vec<HashMap<String, V>>,
+    ids: i64
 }
 
 impl<V> Env<V> {
     pub fn new() -> Self {
         Self {
-            scopes: vec![HashMap::new()]
+            scopes: vec![HashMap::new()],
+            ids: 0
         }
     }
 
@@ -98,6 +118,11 @@ impl<V> Env<V> {
     pub fn add(&mut self, key: &str, val: V) {
         let scope = self.scopes.last_mut().unwrap();
         scope.insert(key.to_string(), val);
+    }
+
+    pub fn get_id(&mut self) -> i64 {
+        self.ids += 1;
+        return self.ids;
     }
 }
 
@@ -132,20 +157,20 @@ pub enum Node {
 }
 
 impl Node {
-    /*pub fn get_type(&self) -> Type {
+    pub fn get_metadata(&self) -> &Metadata {
         match self {
-            Self::Int(md, _)         => md.ttype.clone(),
-            Self::Real(md, _)        => md.ttype.clone(),
-            Self::Bool(md, _)        => md.ttype.clone(),
-            Self::Str(md, _)         => md.ttype.clone(),
-            Self::Id(md, _)          => md.ttype.clone(),
-            Self::BinOp(md, _, _, _) => md.ttype.clone(),
-            Self::Call(md, _, _)     => md.ttype.clone(),
-            Self::LetIn(md, _, _, _) => md.ttype.clone(),
-            Self::If(md, _, _, _)    => md.ttype.clone(),
-            Self::Lambda(md, _, _)   => md.ttype.clone()
+            Self::Int(md, _)         => md,
+            Self::Real(md, _)        => md,
+            Self::Bool(md, _)        => md,
+            Self::Str(md, _)         => md,
+            Self::Id(md, _)          => md,
+            Self::BinOp(md, _, _, _) => md,
+            Self::Call(md, _, _)     => md,
+            Self::LetIn(md, _, _, _) => md,
+            Self::If(md, _, _, _)    => md,
+            Self::Lambda(md, _, _)   => md
         }
-    }*/
+    }
 
     pub fn check_types(&mut self, env: &mut Env<Type>) -> Result<&Type, TCError> {
         match self {
@@ -187,7 +212,10 @@ impl Node {
                 env.push_scope();
                 let mut argtypes = Vec::with_capacity(args.len());
                 for arg in args {
-                    let ttype = arg.1.resolve(env)?;
+                    let ttype = match arg.1.resolve(env)? {
+                        Type::Kind => Type::Generic(env.get_id(), arg.0.clone()),
+                        other => other
+                    };
                     argtypes.push(Rc::new(ttype.clone()));
                     env.add(arg.0.as_str(), ttype);
                 }
@@ -203,16 +231,24 @@ impl Node {
                     Type::Lambda(argtypes, rettype) => (argtypes, rettype),
                     _ => { return Err(TCError::FunctionArgsDoNotMatch(md.pos)); }
                 };
-                md.ttype = rettype.as_ref().clone();
                 if args.len() != argtypes.len() {
-                    return Err(TCError::FunctionArgsDoNotMatch(md.pos));
+                    return Err(TCError::WrongNumberOfArgs(md.pos));
                 }
+
+                let mut rettype = rettype.as_ref().clone();
+                env.push_scope();
                 for i in 0..args.len() {
-                    if argtypes[i].as_ref() != args[i].check_types(env)? {
+                    let ttype = args[i].check_types(env)?.resolve(env)?;
+                    if let Type::Generic(_, name) = argtypes[i].as_ref() {
+                        env.add(name.as_str(), ttype);
+                        rettype = rettype.resolve(env)?;
+                    } else if argtypes[i].as_ref() != &ttype {
                         return Err(TCError::FunctionArgsDoNotMatch(md.pos));
                     }
                 }
+                env.pop_scope();
 
+                md.ttype = rettype;
                 Ok(&md.ttype)
             },
             Self::If(md, cond, iftrue, iffalse) => {
