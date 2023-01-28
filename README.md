@@ -92,4 +92,10 @@ Tags: __*C++*__, __*ART*__, __*Data Structures*__
 
 A bad, unoptimized implementation of a [Adaptive Radix Tree](https://db.in.tum.de/~leis/papers/ART.pdf).
 
+### 017: [QEMU Plugin](./017-qemu+dwarf)
+
+Tags: __*DWARF*__, __*libelfin*__, __*QEMU*__
+
+This is a very simple very basic QEMU [TCG Plugin](https://qemu.readthedocs.io/en/latest/devel/tcg-plugins.html) for user mode emulation. Like everything here it is only a proof-of-concept, and though it works, it could be improved in a lot of ways. It uses [libelfin](https://github.com/aclements/libelfin) to parse the debug information of the emulated binary, tracks how often every translation block was executed, maps translation blocks to source file line numbers, and prints the line numbers of the most executed pieces of code at the end of the emulation.
+
 
