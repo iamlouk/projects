@@ -12,41 +12,36 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-type Pos struct { X, Y int }
+type Game struct {
+	GameId        string
+	Width, Height int
+	Grid          []tcell.Color
+	Lock          sync.Mutex
+	Players       map[string]*Player
+	Colors        []tcell.Color
+	BerryColor    tcell.Color
+	Berries       map[Pos]Pos
+	Actions       chan Action
+	Ticker        *time.Ticker
+	Over          bool
+	Log           *log.Logger
+}
 
 type Player struct {
 	Username  string
 	Screen    tcell.Screen
 	Color     tcell.Color
-	Head      Pos
-	Direction Pos
-	Tail      []Pos
+	Snake     Snake
 	Actions   chan Action
 	Log       *log.Logger
 	Over      bool
 }
 
-func (player *Player) Move(game *Game) {
-	if player.Direction.X != 0 || player.Direction.Y != 0 {
-		player.Tail = append(player.Tail, player.Head)
-	}
-	player.Head.X += player.Direction.X
-	player.Head.Y += player.Direction.Y
-
-	if player.Head.X < 0 {
-		player.Head.X = game.Width - 1
-	}
-	if player.Head.X >= game.Width {
-		player.Head.X = 0
-	}
-	if player.Head.Y < 0 {
-		player.Head.Y = game.Height - 1
-	}
-	if player.Head.Y >= game.Height {
-		player.Head.Y = 0
-	}
-
-	game.Grid[player.Head.Y*game.Width+player.Head.X] = player.Color
+func (player *Player) Move(game *Game) (Pos, Pos) {
+	newpos, oldpos := player.Snake.Move(game.Width, game.Height)
+	game.Grid[newpos.Y*game.Width+newpos.X] = player.Color
+	game.Grid[oldpos.Y*game.Width+oldpos.X] = 0
+	return newpos, oldpos
 }
 
 type Action interface{}
@@ -55,6 +50,7 @@ type ActionPlayerJoin struct {
 	Player    *Player
 	Others    []*Player
 	Positions [][]Pos
+	Berries   []Pos
 }
 
 type ActionPlayerLeave struct {
@@ -67,27 +63,17 @@ type ActionPlayerDirectionChange struct {
 }
 
 type ActionUpdate struct {
-	Time    time.Time
-	Updates []PositionUpdate
+	Time       time.Time
+	Updates    []PositionUpdate
+	NewBerries []Pos
 }
 
 type PositionUpdate struct {
-	Player  *Player
-	Pos     Pos
-	PrevPos Pos
-}
-
-type Game struct {
-	GameId        string
-	Width, Height int
-	Grid          []tcell.Color
-	Lock          sync.Mutex
-	Players       map[string]*Player
-	Colors        []tcell.Color
-	Actions       chan Action
-	Ticker        *time.Ticker
-	Over          bool
-	Log           *log.Logger
+	Player    *Player
+	Head      Pos
+	PrevHead  Pos
+	Tail      Pos
+	ClearTail bool
 }
 
 func (game *Game) Transform(pos Pos) (int, int) {
@@ -114,10 +100,11 @@ func NewGame(width, height int) *Game {
 			tcell.GetColor("green").TrueColor(),
 			tcell.GetColor("red").TrueColor(),
 			tcell.GetColor("lime").TrueColor(),
-			tcell.GetColor("yellow").TrueColor(),
 			tcell.GetColor("blue").TrueColor(),
 			tcell.GetColor("teal").TrueColor(),
 		},
+		BerryColor: tcell.GetColor("yellow").TrueColor(),
+		Berries: make(map[Pos]Pos),
 		Actions: make(chan Action, 128),
 		Ticker:  time.NewTicker(200 * time.Millisecond),
 		Over:    false,
@@ -125,6 +112,10 @@ func NewGame(width, height int) *Game {
 			os.Stderr,
 			fmt.Sprintf("[game:%s] ", gameId),
 			log.Ldate|log.Ltime|log.Lmsgprefix),
+	}
+
+	for i := 0; i < 3; i++ {
+		game.AddBerry()
 	}
 
 	go func() {
@@ -143,11 +134,11 @@ func NewGame(width, height int) *Game {
 						continue
 					}
 
-					i, maxtries := 0, 250
+					x, y, i, maxtries := 0, 0, 0, 250
 					for i < maxtries {
-						player.Head.X = rand.Int() % game.Width
-						player.Head.Y = rand.Int() % game.Height
-						col := game.Grid[player.Head.Y*game.Width+player.Head.X]
+						x = rand.Int() % game.Width
+						y = rand.Int() % game.Height
+						col := game.Grid[y*game.Width+x]
 						if col == 0 {
 							break
 						}
@@ -159,6 +150,8 @@ func NewGame(width, height int) *Game {
 						continue
 					}
 
+					player.Snake.Init(x, y, 6)
+
 					join := &ActionPlayerJoin{
 						Player:    player,
 						Others:    make([]*Player, 0, len(game.Players)),
@@ -166,12 +159,13 @@ func NewGame(width, height int) *Game {
 					}
 					for _, p := range game.Players {
 						join.Others = append(join.Others, p)
-						positions := make([]Pos, 0, 1+len(p.Tail))
-						join.Positions = append(join.Positions, append(positions, p.Tail...))
+						join.Positions = append(join.Positions, p.Snake.ToArray())
+					}
+					for pos := range game.Berries {
+						join.Berries = append(join.Berries, pos)
 					}
 
 					player.Color = game.Colors[0]
-					player.Tail = append(player.Tail, player.Head)
 					game.Players[player.Username] = player
 					game.Colors = game.Colors[1:]
 					game.SendAction(join)
@@ -182,7 +176,7 @@ func NewGame(width, height int) *Game {
 					game.Log.Printf("player %#v left the game", player.Username)
 				case *ActionPlayerDirectionChange:
 					player := act.Player
-					player.Direction = act.NewDirection
+					player.Snake.Direction = act.NewDirection
 				default:
 					panic("invalid action")
 				}
@@ -198,13 +192,22 @@ func NewGame(width, height int) *Game {
 
 				for _, player := range game.Players {
 					if !game.Over {
-						prevPos := player.Head
-						player.Move(game)
+						prevhead := player.Snake.Head.Pos
+						newpos, tailpos := player.Move(game)
 						update.Updates = append(update.Updates, PositionUpdate{
-							Player:  player,
-							Pos:     player.Head,
-							PrevPos: prevPos,
+							Player:    player,
+							Head:      newpos,
+							PrevHead:  prevhead,
+							Tail:      tailpos,
+							ClearTail: true,
 						})
+
+						if pos, ok := game.Berries[newpos]; ok {
+							player.Snake.Grow()
+							delete(game.Berries, pos);
+							berry := game.AddBerry()
+							update.NewBerries = append(update.NewBerries, berry)
+						}
 					}
 				}
 
@@ -224,6 +227,28 @@ func (game *Game) End() {
 	game.Log.Print("Game Over!")
 }
 
+func (game *Game) AddBerry() Pos {
+	for {
+		pos := Pos{
+			X: rand.Int() % game.Width,
+			Y: rand.Int() % game.Height,
+		}
+		if _, ok := game.Berries[pos]; ok {
+			goto tryagain;
+		}
+		for _, p := range game.Players {
+			if p.Snake.Contains(pos) {
+				goto tryagain;
+			}
+		}
+
+		game.Grid[pos.Y*game.Width+pos.X] = game.BerryColor
+		game.Berries[pos] = pos
+		return pos
+	tryagain:
+	}
+}
+
 func (game *Game) HandleConnection(user *UserConnection, screen tcell.Screen) {
 	events := make(chan tcell.Event)
 	quit := make(chan struct{})
@@ -232,7 +257,6 @@ func (game *Game) HandleConnection(user *UserConnection, screen tcell.Screen) {
 	me := &Player{
 		Username: user.User,
 		Screen:   screen,
-		Tail:     make([]Pos, 0, 128),
 		Actions:  make(chan Action, 128),
 		Log: log.New(
 			game.Log.Writer(),
@@ -253,19 +277,19 @@ func (game *Game) HandleConnection(user *UserConnection, screen tcell.Screen) {
 		close(quit)
 	}()
 
-	bstyle := tcell.StyleDefault
 	screen.Clear()
-	screen.SetContent(0, 1, '+', nil, bstyle)
-	screen.SetContent(1+game.Width, 1, '+', nil, bstyle)
-	screen.SetContent(0, 2+game.Height, '+', nil, bstyle)
-	screen.SetContent(1+game.Width, 2+game.Height, '+', nil, bstyle)
+	style := tcell.StyleDefault
+	screen.SetContent(0, 1, '+', nil, style)
+	screen.SetContent(1+game.Width, 1, '+', nil, style)
+	screen.SetContent(0, 2+game.Height, '+', nil, style)
+	screen.SetContent(1+game.Width, 2+game.Height, '+', nil, style)
 	for i := 0; i < game.Width; i++ {
-		screen.SetContent(1+i, 1, '-', nil, bstyle)
-		screen.SetContent(1+i, 2+game.Height, '+', nil, bstyle)
+		screen.SetContent(1+i, 1, '-', nil, style)
+		screen.SetContent(1+i, 2+game.Height, '+', nil, style)
 	}
 	for i := 0; i < game.Height; i++ {
-		screen.SetContent(0, 2+i, '|', nil, bstyle)
-		screen.SetContent(1+game.Width, 2+i, '|', nil, bstyle)
+		screen.SetContent(0, 2+i, '|', nil, style)
+		screen.SetContent(1+game.Width, 2+i, '|', nil, style)
 	}
 
 	screen.Show()
@@ -283,8 +307,13 @@ func (game *Game) HandleConnection(user *UserConnection, screen tcell.Screen) {
 		return
 	}
 
-	x, y := game.Transform(me.Head)
+	x, y := game.Transform(me.Snake.Head.Pos)
 	screen.SetContent(x, y, 'Ö', nil, tcell.StyleDefault.Foreground(me.Color))
+
+	style = tcell.StyleDefault.Foreground(me.Color)
+	for i, r := range fmt.Sprintf("Hi %s!", me.Username) {
+		screen.SetContent(i, 0, r, nil, style)
+	}
 
 	for i := 0; i < len(join.Others); i++ {
 		color := join.Others[i].Color
@@ -296,6 +325,12 @@ func (game *Game) HandleConnection(user *UserConnection, screen tcell.Screen) {
 			x, y := game.Transform(positions[i])
 			screen.SetContent(x, y, 'O', nil, style)
 		}
+	}
+
+	style = tcell.StyleDefault.Foreground(game.BerryColor)
+	for _, pos := range join.Berries {
+		x, y := game.Transform(pos)
+		screen.SetContent(x, y, '+', nil, style)
 	}
 
 	screen.Show()
@@ -343,7 +378,7 @@ func (game *Game) HandleConnection(user *UserConnection, screen tcell.Screen) {
 			}
 			switch act := action.(type) {
 			case *ActionPlayerJoin:
-				x, y := game.Transform(act.Player.Head)
+				x, y := game.Transform(act.Player.Snake.Head.Pos)
 				style := tcell.StyleDefault.Foreground(act.Player.Color)
 				screen.SetContent(x, y, 'Ö', nil, style)
 				screen.Show()
@@ -351,10 +386,19 @@ func (game *Game) HandleConnection(user *UserConnection, screen tcell.Screen) {
 				for _, peer := range act.Updates {
 					var x, y int
 					style := tcell.StyleDefault.Foreground(peer.Player.Color)
-					x, y = game.Transform(peer.PrevPos)
+					x, y = game.Transform(peer.PrevHead)
 					screen.SetContent(x, y, 'O', nil, style)
-					x, y = game.Transform(peer.Pos)
+					x, y = game.Transform(peer.Head)
 					screen.SetContent(x, y, 'Ö', nil, style)
+					if peer.ClearTail && peer.Tail != peer.Head {
+						x, y = game.Transform(peer.Tail)
+						screen.SetContent(x, y, ' ', nil, tcell.StyleDefault)
+					}
+				}
+				for _, pos := range act.NewBerries {
+					style := tcell.StyleDefault.Foreground(game.BerryColor)
+					x, y = game.Transform(pos)
+					screen.SetContent(x, y, '+', nil, style)
 				}
 				screen.Show()
 			default:

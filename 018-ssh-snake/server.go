@@ -34,7 +34,7 @@ func main() {
 		Address:             "localhost:2222",
 		HostKeyFile:         fmt.Sprintf("%s/.ssh/id_rsa", os.Getenv("HOME")),
 		AuthorizedHostsFile: fmt.Sprintf("%s/.ssh/known_hosts", os.Getenv("HOME")),
-		Width:               60,
+		Width:               80,
 		Height:              40,
 	}
 	var configFile string = "./config.json"
