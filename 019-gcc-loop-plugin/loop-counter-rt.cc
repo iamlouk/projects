@@ -30,6 +30,7 @@ __gcclc_loop_header (uint64_t loopid)
   while (x && !max_iterations.compare_exchange_weak(x, x - 1))
     x = max_iterations.load();
 
+  fprintf(stderr, COL_RED "lcgcc: " COL_RESET " loop#%lx has used up all iterations!\n", loopid);
   return x != 0;
 }
 

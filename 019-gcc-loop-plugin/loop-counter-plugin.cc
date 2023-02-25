@@ -52,6 +52,12 @@ static const pass_data loop_counter_pass_data =
 static tree libclrt_header_fun = NULL_TREE;
 static tree libclrt_preheader_fun = NULL_TREE;
 
+/*
+ * For some reason, add_builtin_function cannot
+ * be called directly when the plugin is loaded,
+ * but doing it in the pass execute function
+ * seams wrong as well.
+ */
 static void
 plugin_setup (void *gcc_data, void *user_data)
 {
@@ -74,14 +80,15 @@ plugin_setup (void *gcc_data, void *user_data)
 
 struct loop_counter_pass: gimple_opt_pass
 {
+  /* TODO: Use debug information like source file name, function name and line numbers! */
   uint64_t loop_ids = 0;
-
 
   loop_counter_pass(gcc::context *ctx):
     gimple_opt_pass(loop_counter_pass_data, ctx) {}
 
   bool insert_counter (class loop *loop);
 
+  /* Actually optional, but if I add a enable/disable pragma this will become useful: */
   virtual bool gate(function *fun) final override
   {
     (void) fun;
@@ -95,6 +102,9 @@ struct loop_counter_pass: gimple_opt_pass
     bool in_loop_pipeline = scev_initialized_p ();
     if (!in_loop_pipeline)
       {
+	/* Loops need to be in normal for so that we can
+	 * access the preheader and so on.
+	 */
 	loop_optimizer_init (LOOPS_NORMAL);
 	scev_initialize ();
       }
@@ -108,6 +118,9 @@ struct loop_counter_pass: gimple_opt_pass
 	loop_optimizer_finalize ();
       }
 
+    /* The way this is currently implemented, I do not think
+     * that cleanup_cfg is really needed.
+     */
     return change ? (TODO_update_ssa | TODO_cleanup_cfg) : 0;
   }
 
@@ -120,11 +133,13 @@ loop_counter_pass::insert_counter (class loop *loop)
   if (!preheader || !loop->header || EDGE_COUNT (loop->header->succs) != 2)
     return false;
 
+  /* Build the call in the preheader: */
   tree loopid = build_int_cst (uint64_type_node, this->loop_ids++);
   gcall *stmt = gimple_build_call (libclrt_preheader_fun, 1, loopid);
   gimple_stmt_iterator gsi = gsi_start_bb (preheader);
   gsi_insert_before (&gsi, stmt, GSI_NEW_STMT);
 
+  /* Build the call in the header: */
   tree callres = make_temp_ssa_name (uint64_type_node, NULL, "continue");
   gcall *call = gimple_build_call (libclrt_header_fun, 1, loopid);
   gimple_call_set_lhs (call, callres);
@@ -133,27 +148,31 @@ loop_counter_pass::insert_counter (class loop *loop)
 
   gsi = gsi_last_bb(loop->header);
   gcond *cond = dyn_cast<gcond*> (gsi_stmt (gsi));
-  if (!cond)
+  if (!cond) /* Can only happen in infinite loops, forget about them for now. */
     return false;
 
-  gsi_prev (&gsi);
+  gsi_prev (&gsi); /* Lets start inserting right before the cond stmt. */
 
+  /* `if (a CMP b) goto ...;` becomes `oldcond = a CMP b` */
   tree cond1 = make_temp_ssa_name (boolean_type_node, NULL, "origcond");
   tree expr1 = build2 (gimple_cond_code (cond), boolean_type_node,
 		       gimple_cond_lhs(cond), gimple_cond_rhs(cond));
   gassign *cond1_stmt = gimple_build_assign (cond1, expr1);
   gsi_insert_after(&gsi, cond1_stmt, GSI_CONTINUE_LINKING);
 
+  /* Check if the __gcclc_loop_header function returned something other than zero */
   tree cond2 = make_temp_ssa_name (boolean_type_node, NULL, "controlcond");
   tree expr2 = build2 (NE_EXPR, boolean_type_node, callres, build_zero_cst (uint64_type_node));
   gassign *cond2_stmt = gimple_build_assign (cond2, expr2);
   gsi_insert_after(&gsi, cond2_stmt, GSI_CONTINUE_LINKING);
 
+  /* Create a new statement `newcond = oldcond && <__gcclc_loop_header(...) != 0>` */
   enum tree_code ccode = EDGE_SUCC (loop->header, 0)->dest == loop->latch ? BIT_AND_EXPR : BIT_IOR_EXPR;
   tree ncond = make_temp_ssa_name(boolean_type_node, NULL, "cond");
   gassign *ncond_stmt = gimple_build_assign(ncond, build2(ccode, boolean_type_node, cond1, cond2));
   gsi_insert_after(&gsi, ncond_stmt, GSI_CONTINUE_LINKING);
 
+  /* Replace the old condition and use `if (newcond == true) goto ...;` instead. */
   gimple_cond_set_code(cond, EQ_EXPR);
   gimple_cond_set_lhs(cond, ncond);
   gimple_cond_set_rhs(cond, boolean_true_node);
