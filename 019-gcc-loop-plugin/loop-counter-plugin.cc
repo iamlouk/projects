@@ -14,6 +14,7 @@
 #include "tree.h"
 #include "gimple.h"
 #include "gimple-iterator.h"
+#include "basic-block.h"
 #include "tree-cfg.h"
 #include "tree-pass.h"
 #include "dumpfile.h"
@@ -28,6 +29,8 @@
 #include "diagnostic.h"
 #include "langhooks.h"
 #include "print-tree.h"
+#include "dominance.h"
+#include "tree-ssanames.h"
 
 /* GCC will look for this magic symbol when loading
    the plugin and fail if it is not found:  */
@@ -113,25 +116,48 @@ struct loop_counter_pass: gimple_opt_pass
 bool
 loop_counter_pass::insert_counter (class loop *loop)
 {
-  basic_block preheader = loop_preheader_edge(loop)->src;
-  if (!preheader || !loop->header)
+  basic_block preheader = loop_preheader_edge (loop)->src;
+  if (!preheader || !loop->header || EDGE_COUNT (loop->header->succs) != 2)
     return false;
 
-  tree loopid = build_int_cst(uint64_type_node, this->loop_ids++);
-  gcall *stmt = gimple_build_call(libclrt_preheader_fun, 1, loopid);
+  tree loopid = build_int_cst (uint64_type_node, this->loop_ids++);
+  gcall *stmt = gimple_build_call (libclrt_preheader_fun, 1, loopid);
   gimple_stmt_iterator gsi = gsi_start_bb (preheader);
-  gsi_insert_before(&gsi, stmt, GSI_NEW_STMT);
+  gsi_insert_before (&gsi, stmt, GSI_NEW_STMT);
 
-  tree callres = make_temp_ssa_name(uint64_type_node, NULL, "continue");
-  gcall *call = gimple_build_call(libclrt_header_fun, 1, loopid);
-  gimple_call_set_lhs(call, callres);
-  gsi = gsi_start_bb(loop->header);
-  gsi_insert_before(&gsi, call, GSI_CONTINUE_LINKING);
+  tree callres = make_temp_ssa_name (uint64_type_node, NULL, "continue");
+  gcall *call = gimple_build_call (libclrt_header_fun, 1, loopid);
+  gimple_call_set_lhs (call, callres);
+  gsi = gsi_start_bb (loop->header);
+  gsi_insert_before (&gsi, call, GSI_CONTINUE_LINKING);
 
-  tree zero = build_zero_cst(uint64_type_node);
-  edge e = split_block(loop->header, gsi_stmt (gsi));
+  gsi = gsi_last_bb(loop->header);
+  gcond *cond = dyn_cast<gcond*> (gsi_stmt (gsi));
+  if (!cond)
+    return false;
 
+  gsi_prev (&gsi);
 
+  tree cond1 = make_temp_ssa_name (boolean_type_node, NULL, "origcond");
+  tree expr1 = build2 (gimple_cond_code (cond), boolean_type_node,
+		       gimple_cond_lhs(cond), gimple_cond_rhs(cond));
+  gassign *cond1_stmt = gimple_build_assign (cond1, expr1);
+  gsi_insert_after(&gsi, cond1_stmt, GSI_CONTINUE_LINKING);
+
+  tree cond2 = make_temp_ssa_name (boolean_type_node, NULL, "controlcond");
+  tree expr2 = build2 (NE_EXPR, boolean_type_node, callres, build_zero_cst (uint64_type_node));
+  gassign *cond2_stmt = gimple_build_assign (cond2, expr2);
+  gsi_insert_after(&gsi, cond2_stmt, GSI_CONTINUE_LINKING);
+
+  enum tree_code ccode = EDGE_SUCC (loop->header, 0)->dest == loop->latch ? BIT_AND_EXPR : BIT_IOR_EXPR;
+  tree ncond = make_temp_ssa_name(boolean_type_node, NULL, "cond");
+  gassign *ncond_stmt = gimple_build_assign(ncond, build2(ccode, boolean_type_node, cond1, cond2));
+  gsi_insert_after(&gsi, ncond_stmt, GSI_CONTINUE_LINKING);
+
+  gimple_cond_set_code(cond, EQ_EXPR);
+  gimple_cond_set_lhs(cond, ncond);
+  gimple_cond_set_rhs(cond, boolean_true_node);
+  update_stmt (cond);
 
   debug_loop (loop, 3);
   return true;
