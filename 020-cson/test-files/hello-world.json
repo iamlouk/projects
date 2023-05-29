@@ -1,0 +1,13 @@
+{
+	"hello": "world",
+	"foo": 42,
+	"zero": false,
+	"one": true,
+	"array": [1, 2, 3, 4, 5, 6],
+	"cities": {
+		"foo": "bar",
+		"x": "y",
+		"answer-to-everything": 42
+	},
+	"nothing": null
+}
