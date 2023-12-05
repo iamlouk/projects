@@ -1,4 +1,4 @@
-.PHONY: day01 day02 day03 day04
+.PHONY: day01 day02 day03 day04 day05
 
 # Fortran may not be as bad as I thought and actually
 # pretty useful sometimes, but text processing is not
@@ -21,4 +21,7 @@ day03: ./03/gear-ratios.d ./03/input.txt
 # Doing this in bash was actually not as hard as I thought...
 day04: ./04/scratchcards.sh ./04/input.txt
 	bash ./04/scratchcards.sh < ./04/input.txt
+
+day05:
+	node ./05/fertilizer.mjs < ./05/input.txt
 
