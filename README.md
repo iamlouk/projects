@@ -1,4 +1,4 @@
-# One Day Projects
+# Hello World!
 
 Projects to small for their own repository or just small little things I want to try out.
 
@@ -129,6 +129,12 @@ Yet another Rust Macro/Metaprogramming experiment. This time: `#[derive(JSONifya
 Tags: __*C*__, __*Linux*__, __*amd64*__
 
 This is a fucked-up experiment that nobody should use. This small library can patch (AT RUNTIME!) a x86 binary on Linux and inject calls to a tracer function for selected functions. The binary needs to be compiled with `-fpatchable-function-entry=42`, but the patching itself happens at runtime! The tracer function can be linked in, but a default (weak symbol) is provided that prints `"intercepted: <name>"` and counts the number of calls to the traced function. Functions to trace can be selected using `LSP_TO_PATCH=<pattern>|<pattern>|...`.
+
+### 023: [Port2Proto](./023-proto2port)
+
+Tags: __*Networking*__, __*Linux*__, __*Go*__/__*C*__
+
+Some firewalls only allow traffic for a very select amount of ports (e.g. 80/443), not only from the outside in (thats obviously needed for security!), but also from the inside out (which is annoying). The idea behind this mini-PoC (which I might actually use for once) is a server that listens on a specified port (e.g. 80 because it's almost always allowed, its for HTTP), and then redirects the incoming connections to a *different* port depending on the protocol (e.g. HTTP -> 8080, SSH -> 2022, ...). [This inspired me as well](https://blog.cloudflare.com/sockmap-tcp-splicing-of-the-future/).
 
 ### 024: [Command-Line Tetris In Rust](./024-rustris)
 
