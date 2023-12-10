@@ -5,18 +5,19 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 
 enum cson_type {
-  CSON_INVALID,
-  CSON_ERROR,
-  CSON_NULL,
-  CSON_BOOLEAN,
-  CSON_INTEGER,
-  CSON_REAL,
-  CSON_STRING,
-  CSON_ARRAY,
-  CSON_MAP,
-  CSON_ROOT
+  CSON_INVALID, // 0
+  CSON_ERROR,   // 1
+  CSON_NULL,    // 2
+  CSON_BOOLEAN, // 3
+  CSON_INTEGER, // 4
+  CSON_REAL,    // 5
+  CSON_STRING,  // 6
+  CSON_ARRAY,   // 7
+  CSON_MAP,     // 8
+  CSON_ROOT     // 9
 };
 
 struct cson {
@@ -47,13 +48,13 @@ struct cson {
 void cson_free(struct cson *cson);
 
 static inline bool 
-cson_is_null(struct cson *cson)
+cson_is_null(const struct cson *cson)
 {
   return cson->type == CSON_NULL;
 }
 
 static inline bool
-cson_get_bool(struct cson *cson, bool *x)
+cson_get_bool(const struct cson *cson, bool *x)
 {
   if (cson->type != CSON_BOOLEAN) return false;
   if (x) *x = cson->boolean;
@@ -61,7 +62,7 @@ cson_get_bool(struct cson *cson, bool *x)
 }
 
 static inline bool
-cson_get_integer(struct cson *cson, int64_t *x)
+cson_get_integer(const struct cson *cson, int64_t *x)
 {
   if (cson->type != CSON_INTEGER) return false;
   if (x) *x = cson->integer;
@@ -69,7 +70,15 @@ cson_get_integer(struct cson *cson, int64_t *x)
 }
 
 static inline bool
-cson_get_array(struct cson *cson, struct cson **x)
+cson_get_string(const struct cson *cson, const char **x)
+{
+  if (cson->type != CSON_STRING) return false;
+  if (x) *x = cson->string;
+  return true;
+}
+
+static inline bool
+cson_get_array(const struct cson *cson, struct cson **x)
 {
   if (cson->type != CSON_ARRAY) return false;
   if (x) *x = cson->array;
@@ -77,17 +86,17 @@ cson_get_array(struct cson *cson, struct cson **x)
 }
 
 static inline bool
-cson_get_map(struct cson *cson, struct cson **x)
+cson_get_map(const struct cson *cson, struct cson **x)
 {
   if (cson->type != CSON_MAP) return false;
-  if (x) *x = cson->array;
+  if (x) *x = cson->map;
   return true;
 }
 
 static inline bool
-cson_array_next(struct cson *cson, size_t *idx, struct cson **x)
+cson_array_next(const struct cson *cson, size_t *idx, const struct cson **x)
 {
-  if (!cson->container || cson->container->type == CSON_ARRAY || cson->next == NULL)
+  if (!cson->container || cson->container->type != CSON_ARRAY || cson->next == NULL)
     return false;
 
   *idx = cson->next->idx;
@@ -96,9 +105,9 @@ cson_array_next(struct cson *cson, size_t *idx, struct cson **x)
 }
 
 static inline bool
-cson_map_next(struct cson *cson, const char **key, struct cson **x)
+cson_map_next(const struct cson *cson, const char **key, const struct cson **x)
 {
-  if (!cson->container || cson->container->type == CSON_MAP || cson->next == NULL)
+  if (!cson->container || cson->container->type != CSON_MAP || cson->next == NULL)
     return false;
 
   *key = cson->next->key;
@@ -106,10 +115,23 @@ cson_map_next(struct cson *cson, const char **key, struct cson **x)
   return true;
 }
 
-
+extern struct cson *cson_parse_file(const char *file_path, const char **freewhendone);
 
 extern struct cson *cson_parse(char *data, int64_t size);
 
 extern ssize_t cson_write(struct cson *cson, FILE *f);
+
+static inline bool
+cson_map_get_field(const struct cson *cson, const char *key, const struct cson **field)
+{
+  if (cson->type == CSON_MAP)
+	return cson_map_get_field(cson->map, key, field);
+  if (!cson->container || cson->container->type != CSON_MAP)
+	return false;
+  if (strcmp(cson->key, key) == 0)
+	return *field = cson, true;
+
+  return cson->next ? cson_map_get_field(cson->next, key, field) : false;
+}
 
 #endif /* CSON_H */
