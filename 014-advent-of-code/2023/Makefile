@@ -1,5 +1,12 @@
 .PHONY: day01 day02 day03 day04 day05 day06 day07 day08 day09
 
+
+# Languages already used:
+# - Fortran, Haskell, D, Bash, JavaScript, C, Rust,
+#   Scala(3), Clojure, Ruby
+# Languages still to use:
+# - Go, C++, Swift, Python
+
 # Fortran may not be as bad as I thought and actually
 # pretty useful sometimes, but text processing is not
 # it's strong point!
@@ -45,4 +52,8 @@ day08:
 # Clojure is even better than I remember it, I should use it more!
 day09:
 	clojure -M ./09/oasis.clj < ./09/input.txt
+
+# I am not a fan of ruby...
+day10:
+	ruby ./10/pipemaze.rb < ./10/input.txt
 
