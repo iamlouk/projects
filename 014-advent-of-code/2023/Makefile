@@ -1,11 +1,11 @@
-.PHONY: day01 day02 day03 day04 day05 day06 day07 day08 day09
+.PHONY: day01 day02 day03 day04 day05 day06 day07 day08 day09 day10 day11
 
 
 # Languages already used:
 # - Fortran, Haskell, D, Bash, JavaScript, C, Rust,
-#   Scala(3), Clojure, Ruby
+#   Scala(3), Clojure, Ruby, Go
 # Languages still to use:
-# - Go, C++, Swift, Python
+# - C++, Swift, Python
 
 # Fortran may not be as bad as I thought and actually
 # pretty useful sometimes, but text processing is not
@@ -56,4 +56,7 @@ day09:
 # I am not a fan of ruby...
 day10:
 	ruby ./10/pipemaze.rb < ./10/input.txt
+
+day11:
+	go run ./11/cosmic-expansion.go < ./11/input.txt
 
