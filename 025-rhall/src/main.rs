@@ -1,3 +1,5 @@
+#![feature(assert_matches)]
+
 use std::io::Read;
 
 mod core;

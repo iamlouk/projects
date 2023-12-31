@@ -134,7 +134,7 @@ impl<'a> Parser<'a> {
     }
 
     fn expect_token(&mut self, expected: Tok) -> Result<SLoc, Error> {
-        let (sloc, tok) = self.lexer.next().ok_or_else(|| Error::UnexpectedEOF)??;
+        let (sloc, tok) = self.lexer.next().ok_or(Error::UnexpectedEOF)??;
         if tok == expected {
             Ok(sloc)
         } else {
@@ -143,16 +143,14 @@ impl<'a> Parser<'a> {
     }
 
     fn consume_if(&mut self, tok: Tok) -> bool {
-        if let Some(res) = self.lexer.peek() {
-            if let Ok((sloc, t)) = res {
-                self.consumed_sloc = sloc;
-                if t == tok {
-                    self.lexer.next();
-                    return true
-                }
+        if let Some(Ok((sloc, t))) = self.lexer.peek() {
+            self.consumed_sloc = sloc;
+            if t == tok {
+                self.lexer.next();
+                return true
             }
         }
-        return false
+        false
     }
 
     fn binop_precedence(binop: BinOp) -> usize {
@@ -193,7 +191,7 @@ impl<'a> Parser<'a> {
             let name = match self.lexer.next().ok_or(Error::UnexpectedEOF)?? {
                 (_, Tok::Id(name)) => name,
                 (sloc, found) => return Err(Error::ExpectedToken {
-                    sloc, expected: Tok::Id(Rc::from("<whatever>".clone())), found })
+                    sloc, expected: Tok::Id(Rc::from("<whatever>")), found })
             };
 
             self.expect_token(Tok::Assign)?;
@@ -284,11 +282,12 @@ impl<'a> Parser<'a> {
                         break
                     }
 
-                    return Err(Error::Parser(self.consumed_sloc, format!("Expected ',' or ')'")))
+                    return Err(Error::Parser(self.consumed_sloc, "Expected ',' or ')'".to_string()))
                 }
 
                 expr = Rc::new(RefCell::new(Node::Call {
-                    sloc: self.consumed_sloc, typ: Type::Unresolved(None), callable: expr, args }))
+                    sloc: self.consumed_sloc, typ: Type::Unresolved(None), callable: expr, args }));
+                continue;
             }
             break;
         }
@@ -315,7 +314,7 @@ impl<'a> Parser<'a> {
                     let name = match self.lexer.next().ok_or(Error::UnexpectedEOF)?? {
                         (_, Tok::Id(name)) => name,
                         (sloc, t) => return Err(Error::ExpectedToken {
-                            sloc, expected: Tok::Id(Rc::from("<whatever>".clone())), found: t }),
+                            sloc, expected: Tok::Id(Rc::from("<whatever>")), found: t }),
                     };
 
                     self.expect_token(Tok::Colon)?;

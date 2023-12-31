@@ -91,3 +91,32 @@ impl Env {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use std::assert_matches::assert_matches;
+
+    use super::*;
+    use crate::lex::Lexer;
+    use crate::ast::Parser;
+
+    fn parse(input: &'static str) -> Result<NodeRef, Error> {
+        let mut spool = std::collections::HashSet::<Rc<str>>::new();
+        let mut lexer = Lexer::new(input, 0, &mut spool);
+        let mut parser = Parser::new(&mut lexer);
+        parser.parse_all()
+    }
+
+    #[test]
+    fn incto42() {
+        let mut env = Env::new();
+        let expr = parse("let inc = λ(x: Int) -> x + 1 in inc(41)").unwrap();
+        assert_matches!(env.eval(&expr), Ok(Value::Integer(42)));
+    }
+
+    #[test]
+    fn fib10() {
+        let mut env = Env::new();
+        let expr = parse("let fib = λ(n: Int) -> if n < 2 then n else fib(n - 1) + fib(n - 2) in fib(10)").unwrap();
+        assert_matches!(env.eval(&expr), Ok(Value::Integer(55)));
+    }
+}
