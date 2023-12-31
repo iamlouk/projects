@@ -1,7 +1,9 @@
 use std::rc::Rc;
 
-use crate::{core::{Value, Type, Error}, ast::{NodeRef, BinOp}};
-
+use crate::{
+    ast::{BinOp, NodeRef},
+    core::{Error, Type, Value},
+};
 
 pub struct Env {
     globals: std::collections::HashMap<&'static str, Value>,
@@ -16,14 +18,14 @@ impl Env {
         globals.insert("String", Value::Type(Type::String));
         Self {
             globals,
-            locals: Vec::with_capacity(16)
+            locals: Vec::with_capacity(16),
         }
     }
 
     fn lookup(&self, name: &str) -> Option<Value> {
         let local = self.locals.iter().rev().find(|l| l.0.as_ref() == name);
         if let Some((_, val)) = local {
-            return Some(val.clone())
+            return Some(val.clone());
         }
         self.globals.get(name).cloned()
     }
@@ -47,7 +49,9 @@ impl Env {
     pub fn eval(&mut self, node: &NodeRef) -> Result<Value, Error> {
         use crate::ast::Node;
         match &*node.borrow() {
-            Node::Id { name, .. } => self.lookup(name.as_ref()).ok_or(Error::UndefinedValue(name.clone())),
+            Node::Id { name, .. } => self
+                .lookup(name.as_ref())
+                .ok_or(Error::UndefinedValue(name.clone())),
             Node::Integer { value, .. } => Ok(Value::Integer(*value)),
             Node::Boolean { value, .. } => Ok(Value::Boolean(*value)),
             Node::String { value, .. } => Ok(Value::String(value.clone())),
@@ -58,7 +62,7 @@ impl Env {
                 (BinOp::Div, Value::Integer(lhs), Value::Integer(rhs)) => Value::Integer(lhs / rhs),
                 (BinOp::LT, Value::Integer(lhs), Value::Integer(rhs)) => Value::Boolean(lhs < rhs),
                 (BinOp::LE, Value::Integer(lhs), Value::Integer(rhs)) => Value::Boolean(lhs <= rhs),
-                _ => unimplemented!()
+                _ => unimplemented!(),
             }),
             Node::Call { callable, args, .. } => match self.eval(callable)? {
                 Value::Lambda(argnames, body) if argnames.len() == args.len() => {
@@ -70,23 +74,25 @@ impl Env {
                     let value = self.eval(&body)?;
                     self.pop(args.len());
                     Ok(value)
-                },
-                _ => Err(Error::Uncallable(callable.clone()))
+                }
+                _ => Err(Error::Uncallable(callable.clone())),
             },
             Node::IfThenElse { op0, op1, op2, .. } => match self.eval(op0)? {
                 Value::Boolean(true) => self.eval(op1),
                 Value::Boolean(false) => self.eval(op2),
-                _ => unimplemented!()
+                _ => unimplemented!(),
             },
-            Node::LetIn { name, value, body, .. } => {
+            Node::LetIn {
+                name, value, body, ..
+            } => {
                 let value = self.eval(value)?;
                 self.push(name, value);
                 let res = self.eval(body)?;
                 self.pop(1);
                 Ok(res)
-            },
+            }
             Node::Lambda { args, body, .. } => Ok(Value::Lambda(args.clone(), body.clone())),
-            _ => unimplemented!()
+            _ => unimplemented!(),
         }
     }
 }
@@ -96,8 +102,8 @@ mod tests {
     use std::assert_matches::assert_matches;
 
     use super::*;
-    use crate::lex::Lexer;
     use crate::ast::Parser;
+    use crate::lex::Lexer;
 
     fn parse(input: &'static str) -> Result<NodeRef, Error> {
         let mut spool = std::collections::HashSet::<Rc<str>>::new();
@@ -116,7 +122,9 @@ mod tests {
     #[test]
     fn fib10() {
         let mut env = Env::new();
-        let expr = parse("let fib = λ(n: Int) -> if n < 2 then n else fib(n - 1) + fib(n - 2) in fib(10)").unwrap();
+        let expr =
+            parse("let fib = λ(n: Int) -> if n < 2 then n else fib(n - 1) + fib(n - 2) in fib(10)")
+                .unwrap();
         assert_matches!(env.eval(&expr), Ok(Value::Integer(55)));
     }
 }
