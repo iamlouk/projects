@@ -40,7 +40,7 @@ This project was more about building LLVM (14.0) and looking into the build syst
 
 ### 007: [Bytecode-VM comparing threaded jumps and a jump table](./007-mini-vm) *(semi-finished)*
 
-Tags: __*C*__, __*performance*__
+Tags: __*C*__, __*Performance*__
 
 Somehow, [the iSH iOS app](https://github.com/ish-app/ish) manages to have a quite good emulator (still quite slow) on a platform where code generation is impossible because of the restrictions iOS enforces on paging. I knew of computed `goto`s, but have never used them before. This is my take on a bytecode VM that uses the threaded dispatch technique used in _iSH_, but without the assembly. Using that technique indeed increases performance by up to 2x for my simple testcase.
 
@@ -130,7 +130,7 @@ Tags: __*C*__, __*Linux*__, __*amd64*__
 
 This is a fucked-up experiment that nobody should use. This small library can patch (AT RUNTIME!) a x86 binary on Linux and inject calls to a tracer function for selected functions. The binary needs to be compiled with `-fpatchable-function-entry=42`, but the patching itself happens at runtime! The tracer function can be linked in, but a default (weak symbol) is provided that prints `"intercepted: <name>"` and counts the number of calls to the traced function. Functions to trace can be selected using `LSP_TO_PATCH=<pattern>|<pattern>|...`.
 
-### 023: [Port2Proto](./023-proto2port)
+### 023: [Port2Proto](./023-proto2port) *(unfinished)*
 
 Tags: __*Networking*__, __*Linux*__, __*Go*__/__*C*__
 
@@ -141,4 +141,10 @@ Some firewalls only allow traffic for a very select amount of ports (e.g. 80/443
 Tags: __*Rust*__, __*Game*__
 
 Command line tetris.
+
+### 025: [Rhall](./025-rhall)
+
+Tags: __*Rust*__, __*Interpreter*__
+
+A tiny super bad interpreter for a [Dhall](https://github.com/dhall-lang/dhall-lang)-like language subset. The prototype works but is very very basic. I might come back to it to improve it by adding the following things: record types, builtins, type-checking, lists, higher-order types, ...
 
