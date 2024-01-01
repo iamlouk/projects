@@ -6,6 +6,8 @@ use crate::{
 };
 
 pub struct Env {
+    // TODO: Add the string_pool hashset here or to a runtime object.
+    // TODO: Add pre-allocated type RCs here that can be used by the parser!
     globals: std::collections::HashMap<&'static str, Value>,
     locals: Vec<(Rc<str>, Value)>,
 }
@@ -13,9 +15,10 @@ pub struct Env {
 impl Env {
     pub fn new() -> Self {
         let mut globals = std::collections::HashMap::<&'static str, Value>::new();
-        globals.insert("Int", Value::Type(Type::Integer));
-        globals.insert("Bool", Value::Type(Type::Boolean));
-        globals.insert("String", Value::Type(Type::String));
+        globals.insert("Int", Value::Type(None, Rc::new(Type::Integer)));
+        globals.insert("Bool", Value::Type(None, Rc::new(Type::Boolean)));
+        globals.insert("Str", Value::Type(None, Rc::new(Type::String)));
+        globals.insert("Type", Value::Type(None, Rc::new(Type::Type)));
         Self {
             globals,
             locals: Vec::with_capacity(16),
@@ -30,6 +33,7 @@ impl Env {
         self.globals.get(name).cloned()
     }
 
+    #[allow(unused)]
     pub fn add_global(&mut self, name: &'static str, value: Value) {
         assert!(!self.globals.contains_key(name));
         self.globals.insert(name, value);
@@ -52,17 +56,24 @@ impl Env {
             Node::Id { name, .. } => self
                 .lookup(name.as_ref())
                 .ok_or(Error::UndefinedValue(name.clone())),
-            Node::Integer { value, .. } => Ok(Value::Integer(*value)),
-            Node::Boolean { value, .. } => Ok(Value::Boolean(*value)),
-            Node::String { value, .. } => Ok(Value::String(value.clone())),
+            Node::Integer { value, .. } => Ok(Value::Int(*value)),
+            Node::Boolean { value, .. } => Ok(Value::Bool(*value)),
+            Node::String { value, .. } => Ok(Value::Str(value.clone())),
+            Node::Invert { op0, .. } => Ok(match self.eval(op0)? {
+                Value::Bool(value) => Value::Bool(!value),
+                Value::Int(value) => Value::Int(!value),
+                _ => unimplemented!()
+            }),
             Node::BinOp { op, lhs, rhs, .. } => Ok(match (op, self.eval(lhs)?, self.eval(rhs)?) {
-                (BinOp::Add, Value::Integer(lhs), Value::Integer(rhs)) => Value::Integer(lhs + rhs),
-                (BinOp::Sub, Value::Integer(lhs), Value::Integer(rhs)) => Value::Integer(lhs - rhs),
-                (BinOp::Mul, Value::Integer(lhs), Value::Integer(rhs)) => Value::Integer(lhs * rhs),
-                (BinOp::Div, Value::Integer(lhs), Value::Integer(rhs)) => Value::Integer(lhs / rhs),
-                (BinOp::LT, Value::Integer(lhs), Value::Integer(rhs)) => Value::Boolean(lhs < rhs),
-                (BinOp::LE, Value::Integer(lhs), Value::Integer(rhs)) => Value::Boolean(lhs <= rhs),
-                _ => unimplemented!(),
+                (BinOp::Add, Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs + rhs),
+                (BinOp::Sub, Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs - rhs),
+                (BinOp::Mul, Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs * rhs),
+                (BinOp::Div, Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs / rhs),
+                (BinOp::EQ, Value::Int(lhs), Value::Int(rhs)) => Value::Bool(lhs == rhs),
+                (BinOp::NE, Value::Int(lhs), Value::Int(rhs)) => Value::Bool(lhs == rhs),
+                (BinOp::LT, Value::Int(lhs), Value::Int(rhs)) => Value::Bool(lhs < rhs),
+                (BinOp::LE, Value::Int(lhs), Value::Int(rhs)) => Value::Bool(lhs <= rhs),
+                (op, lhs, rhs) => panic!("op: {:?}, lhs: {:?}, rhs: {:?}", op, lhs, rhs),
             }),
             Node::Call { callable, args, .. } => match self.eval(callable)? {
                 Value::Lambda(argnames, body) if argnames.len() == args.len() => {
@@ -78,8 +89,8 @@ impl Env {
                 _ => Err(Error::Uncallable(callable.clone())),
             },
             Node::IfThenElse { op0, op1, op2, .. } => match self.eval(op0)? {
-                Value::Boolean(true) => self.eval(op1),
-                Value::Boolean(false) => self.eval(op2),
+                Value::Bool(true) => self.eval(op1),
+                Value::Bool(false) => self.eval(op2),
                 _ => unimplemented!(),
             },
             Node::LetIn {
@@ -92,7 +103,27 @@ impl Env {
                 Ok(res)
             }
             Node::Lambda { args, body, .. } => Ok(Value::Lambda(args.clone(), body.clone())),
-            _ => unimplemented!(),
+            Node::Forall { sloc, argtypes, rettyp, .. } => {
+                let mut args = Vec::with_capacity(argtypes.len());
+                for (name, argtyp) in argtypes.iter() {
+                    let typval = self.eval(argtyp)?;
+                    let typ = match typval {
+                        Value::Type(_, ref t) => t.clone(),
+                        _ => return Err(Error::ExpectedType(*sloc))
+                    };
+                    self.push(name, typval);
+                    args.push((name.clone(), typ));
+                }
+
+                let rettyp = match self.eval(rettyp)? {
+                    Value::Type(_, t) => t,
+                    _ => return Err(Error::ExpectedType(*sloc))
+                };
+
+                let res = Value::Type(None, Rc::new(Type::Lambda(args, rettyp)));
+                self.pop(argtypes.len());
+                Ok(res)
+            }
         }
     }
 }
@@ -116,7 +147,7 @@ mod tests {
     fn incto42() {
         let mut env = Env::new();
         let expr = parse("let inc = λ(x: Int) -> x + 1 in inc(41)").unwrap();
-        assert_matches!(env.eval(&expr), Ok(Value::Integer(42)));
+        assert_matches!(env.eval(&expr), Ok(Value::Int(42)));
     }
 
     #[test]
@@ -125,6 +156,6 @@ mod tests {
         let expr =
             parse("let fib = λ(n: Int) -> if n < 2 then n else fib(n - 1) + fib(n - 2) in fib(10)")
                 .unwrap();
-        assert_matches!(env.eval(&expr), Ok(Value::Integer(55)));
+        assert_matches!(env.eval(&expr), Ok(Value::Int(55)));
     }
 }
