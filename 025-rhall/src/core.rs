@@ -44,7 +44,7 @@ impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Type::Unresolved(None) => write!(f, "???"),
-            Type::Unresolved(Some(node)) => write!(f, "{}", node.as_ref().borrow()),
+            Type::Unresolved(Some(node)) => write!(f, "{} /* Unresolved */", node.as_ref().borrow()),
             Type::Boolean => write!(f, "Bool"),
             Type::Integer => write!(f, "Int"),
             Type::String => write!(f, "Str"),

@@ -111,7 +111,7 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            if c == '#' {
+            if c == '#' || (c == '-' && self.chars.peek().cloned() == Some('-')) {
                 for c in self.chars.by_ref() {
                     if c == '\n' {
                         self.sloc.line += 1;
