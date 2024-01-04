@@ -1,7 +1,7 @@
 use std::{rc::Rc, collections::{HashSet, HashMap}};
 
 use crate::{
-    ast::{BinOp, NodeRef},
+    ast::{BinOp, Node},
     core::{Error, Type, Value, SLoc},
 };
 
@@ -72,9 +72,8 @@ impl Env {
         }
     }
 
-    pub fn eval(&mut self, node: &NodeRef) -> Result<Value, Error> {
-        use crate::ast::Node;
-        match &*node.borrow() {
+    pub fn eval(&mut self, node: &Node) -> Result<Value, Error> {
+        match node {
             Node::Id { name, .. } => self
                 .lookup(name.as_ref())
                 .ok_or(Error::UndefinedValue(name.clone())),
@@ -97,18 +96,18 @@ impl Env {
                 (BinOp::LE, Value::Int(lhs), Value::Int(rhs)) => Value::Bool(lhs <= rhs),
                 (op, lhs, rhs) => panic!("op: {:?}, lhs: {:?}, rhs: {:?}", op, lhs, rhs),
             }),
-            Node::Call { callable, args, .. } => match self.eval(callable)? {
+            Node::Call { sloc, callable, args, .. } => match self.eval(callable)? {
                 Value::Lambda(argnames, body) if argnames.len() == args.len() => {
                     for (i, (name, _)) in argnames.iter().enumerate() {
                         let arg = self.eval(&args[i])?;
                         self.push(name, arg);
                     }
 
-                    let value = self.eval(&body)?;
+                    let value = self.eval(&body.borrow())?;
                     self.pop(args.len());
                     Ok(value)
                 }
-                _ => Err(Error::Uncallable(callable.clone())),
+                _ => Err(Error::Uncallable(*sloc, format!("{}", callable.as_ref()))),
             },
             Node::IfThenElse { op0, op1, op2, .. } => match self.eval(op0)? {
                 Value::Bool(true) => self.eval(op1),
@@ -145,7 +144,7 @@ impl Env {
                     }
                 }
 
-                let rettyp = match self.eval(rettyp)? {
+                let rettyp = match self.eval(&rettyp.borrow())? {
                     Value::Type(_, t) => t,
                     _ => return Err(Error::ExpectedType(*sloc))
                 };
@@ -166,7 +165,7 @@ mod tests {
     use crate::ast::Parser;
     use crate::lex::Lexer;
 
-    fn parse(input: &'static str) -> Result<NodeRef, Error> {
+    fn parse(input: &'static str) -> Result<Box<Node>, Error> {
         let mut spool = std::collections::HashSet::<Rc<str>>::new();
         let mut lexer = Lexer::new(input, 0, &mut spool);
         let mut parser = Parser::new(&mut lexer);
@@ -176,8 +175,8 @@ mod tests {
     #[test]
     fn incto42() {
         let mut env = Env::new();
-        let expr = parse("let inc = λ(x: Int) -> x + 1 in inc(41)").unwrap();
-        expr.borrow_mut().typecheck(&mut env).expect("typecheck failed");
+        let mut expr = parse("let inc = λ(x: Int) -> x + 1 in inc(41)").unwrap();
+        expr.typecheck(&mut env).expect("typecheck failed");
         assert_matches!(env.eval(&expr), Ok(Value::Int(42)));
     }
 

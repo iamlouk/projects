@@ -21,7 +21,6 @@ pub enum BinOp {
     GE,
 }
 
-pub type NodeRef = Rc<RefCell<Node>>;
 #[derive(Debug, Clone)]
 pub enum Node {
     Id {
@@ -47,50 +46,47 @@ pub enum Node {
     Invert {
         sloc: SLoc,
         typ: Option<Rc<Type>>,
-        op0: NodeRef,
+        op0: Box<Node>,
     },
     BinOp {
         sloc: SLoc,
         typ: Option<Rc<Type>>,
         op: BinOp,
-        lhs: NodeRef,
-        rhs: NodeRef,
+        lhs: Box<Node>,
+        rhs: Box<Node>,
         iscmp: bool,
     },
     Call {
         sloc: SLoc,
         typ: Option<Rc<Type>>,
-        callable: NodeRef,
-        args: Vec<NodeRef>,
+        callable: Box<Node>,
+        args: Vec<Box<Node>>,
     },
     IfThenElse {
         sloc: SLoc,
         typ: Option<Rc<Type>>,
-        op0: NodeRef,
-        op1: NodeRef,
-        op2: NodeRef,
+        op0: Box<Node>,
+        op1: Box<Node>,
+        op2: Box<Node>,
     },
     LetIn {
         sloc: SLoc,
         typ: Option<Rc<Type>>,
         name: Rc<str>,
-        value: NodeRef,
-        body: NodeRef,
+        value: Box<Node>,
+        body: Box<Node>,
     },
     Lambda {
         sloc: SLoc,
         typ: Option<Rc<Type>>,
-        args: Vec<(Rc<str>, Option<Rc<Type>>, NodeRef)>,
-        body: NodeRef, // <- Technically/Theoretically, this should be the only
-                       // field where a Rc<RefCell<Node>> is really needed.
-                       // All other AST-children should also be able to just
-                       // be Box<Node>.
+        args: Vec<(Rc<str>, Option<Rc<Type>>, Box<Node>)>,
+        body: Rc<RefCell<Node>>,
     },
     Forall {
         sloc: SLoc,
         typ: Option<Rc<Type>>,
-        argtypes: Vec<(Rc<str>, Option<Rc<Type>>, NodeRef)>,
-        rettyp: NodeRef // <- Well, here as well...!
+        argtypes: Vec<(Rc<str>, Option<Rc<Type>>, Box<Node>)>,
+        rettyp: Rc<RefCell<Node>>
     }
 }
 
@@ -144,7 +140,7 @@ impl Node {
             },
             Node::Invert { typ: Some(t), .. } => Ok(t.clone()),
             Node::Invert { sloc, typ, op0 } => {
-                let t = op0.borrow_mut().typecheck(env)?;
+                let t = op0.typecheck(env)?;
                 if *t.as_ref() != Type::Boolean && *t.as_ref() != Type::Integer {
                     return Err(Error::TypeError(*sloc,
                             format!("invalid type for '~' operator: {}", t)))
@@ -154,8 +150,8 @@ impl Node {
             },
             Node::BinOp { typ: Some(t), .. } => Ok(t.clone()),
             Node::BinOp { sloc, typ, op, lhs, rhs, iscmp } => {
-                let lhsty = lhs.borrow_mut().typecheck(env)?;
-                let rhsty = rhs.borrow_mut().typecheck(env)?;
+                let lhsty = lhs.typecheck(env)?;
+                let rhsty = rhs.typecheck(env)?;
                 if *lhsty != *rhsty {
                     return Err(Error::TypeError(*sloc,
                             format!("binary operator with different operand types: {} and {}",
@@ -175,14 +171,14 @@ impl Node {
             },
             Node::Call { typ: Some(t), .. } => Ok(t.clone()),
             Node::Call { sloc, typ, callable, args } => {
-                let callablety = callable.borrow_mut().typecheck(env)?;
+                let callablety = callable.typecheck(env)?;
                 if let Type::Lambda(argtypes, rettyp) = callablety.as_ref() {
                     if args.len() != argtypes.len() {
-                        return Err(Error::Uncallable(callable.clone()))
+                        return Err(Error::Uncallable(*sloc, format!("{}", callable.as_ref())))
                     }
 
-                    for (arg, (_, argtyp)) in args.iter().zip(argtypes.iter()) {
-                        let t = arg.borrow_mut().typecheck(env)?;
+                    for (arg, (_, argtyp)) in args.iter_mut().zip(argtypes.iter()) {
+                        let t = arg.typecheck(env)?;
                         if t.as_ref() != argtyp.as_ref() {
                             return Err(Error::TypeError(*sloc,
                                     format!("expected: {}, found: {}", argtyp, t)));
@@ -193,19 +189,19 @@ impl Node {
                     return Ok(rettyp.clone())
                 }
 
-                Err(Error::Uncallable(callable.clone()))
+                Err(Error::Uncallable(*sloc, format!("{}", callable.as_ref())))
             },
             Node::IfThenElse { typ: Some(t), .. } => Ok(t.clone()),
             Node::IfThenElse { sloc, typ, op0, op1, op2 } => {
-                let op0ty = op0.borrow_mut().typecheck(env)?;
+                let op0ty = op0.typecheck(env)?;
                 if op0ty.as_ref() != &Type::Boolean {
                     return Err(Error::TypeError(*sloc,
                             format!("condition of if-then-else needs to be a boolean, not: {}",
                                 op0ty.as_ref())))
                 }
 
-                let op1ty = op1.borrow_mut().typecheck(env)?;
-                let op2ty = op2.borrow_mut().typecheck(env)?;
+                let op1ty = op1.typecheck(env)?;
+                let op2ty = op2.typecheck(env)?;
 
                 if op1ty.as_ref() != op2ty.as_ref() {
                     return Err(Error::TypeError(*sloc,
@@ -219,9 +215,9 @@ impl Node {
             },
             Node::LetIn { typ: Some(t), .. } => Ok(t.clone()),
             Node::LetIn { typ, name, value, body, .. } => {
-                let valty = value.borrow_mut().typecheck(env)?;
+                let valty = value.typecheck(env)?;
                 env.push(name, Value::Type(None, valty));
-                let t = body.borrow_mut().typecheck(env)?;
+                let t = body.typecheck(env)?;
                 env.pop(1);
                 *typ = Some(t.clone());
                 Ok(t)
@@ -231,7 +227,7 @@ impl Node {
                 let mut argtypes = Vec::with_capacity(args.len());
                 for (name, argtyp, rawtyp) in args.iter_mut() {
                     assert!(typ.is_none());
-                    let t = rawtyp.borrow_mut().typecheck(env)?;
+                    let t = rawtyp.typecheck(env)?;
                     *argtyp = Some(t.clone());
                     env.push(name, Value::Type(None, t.clone()));
                     argtypes.push((name.clone(), t));
@@ -260,27 +256,27 @@ impl std::fmt::Display for Node {
             Node::Boolean { value: true, .. } => f.write_str("⊤"),
             Node::Boolean { value: false, .. } => f.write_str("⊥"),
             Node::String { value, .. } => write!(f, "{:?}", value.as_ref()),
-            Node::Invert { op0, .. } => write!(f, "(~{})", op0.borrow()),
+            Node::Invert { op0, .. } => write!(f, "(~{})", op0.as_ref()),
             Node::BinOp { op, lhs, rhs, .. } =>
                 write!(f, "({} {} {})",
-                    lhs.borrow(),
+                    lhs.as_ref(),
                     match op { BinOp::Add => "+", BinOp::Sub => "-", BinOp::Mul => "*",
                                BinOp::Div => "*", BinOp::And => "&", BinOp::Or => "|",
                                BinOp::EQ => "==", BinOp::NE => "!=", BinOp::LT => "<",
                                BinOp::LE => "<=", BinOp::GT => ">", BinOp::GE => "<=" },
-                    rhs.borrow()),
+                    rhs.as_ref()),
             Node::Call { callable, args, .. } => {
-                write!(f, "{}(", callable.as_ref().borrow())?;
+                write!(f, "{}(", callable.as_ref())?;
                 for (i, arg) in args.iter().enumerate() {
                     if i != 0 { write!(f, ", ")?; }
-                    write!(f, "{}", arg.borrow())?;
+                    write!(f, "{}", arg.as_ref())?;
                 }
                 write!(f, ")")
             },
             Node::IfThenElse { op0, op1, op2, .. } =>
-                write!(f, "if ({}) then ({}) else ({})", op0.borrow(), op1.borrow(), op2.borrow()),
+                write!(f, "if ({}) then ({}) else ({})", op0.as_ref(), op1.as_ref(), op2.as_ref()),
             Node::LetIn { name, value, body, .. } =>
-                write!(f, "let {} = {} in {}", name.as_ref(), value.borrow(), body.borrow()),
+                write!(f, "let {} = {} in {}", name.as_ref(), value.as_ref(), body.as_ref()),
             Node::Lambda { args, body, .. } => {
                 write!(f, "λ(")?;
                 for (i, (name, typ, rawtyp)) in args.iter().enumerate() {
@@ -288,7 +284,7 @@ impl std::fmt::Display for Node {
                     if let Some(t) = typ {
                         write!(f, "{}: {}", name.as_ref(), t.as_ref())?;
                     } else {
-                        write!(f, "{}: {}", name.as_ref(), rawtyp.borrow())?;
+                        write!(f, "{}: {}", name.as_ref(), rawtyp.as_ref())?;
                     }
                 }
                 write!(f, ") -> {}", body.borrow())
@@ -300,7 +296,7 @@ impl std::fmt::Display for Node {
                     if let Some(t) = typ {
                         write!(f, "{}: {}", name.as_ref(), t.as_ref())?;
                     } else {
-                        write!(f, "{}: {}", name.as_ref(), rawtyp.borrow())?;
+                        write!(f, "{}: {}", name.as_ref(), rawtyp.as_ref())?;
                     }
                 }
                 write!(f, ") -> {}", rettyp.borrow())
@@ -367,7 +363,7 @@ impl<'a> Parser<'a> {
         false
     }
 
-    pub fn parse_all(&mut self) -> Result<NodeRef, Error> {
+    pub fn parse_all(&mut self) -> Result<Box<Node>, Error> {
         let node = self.parse()?;
         match self.lexer.next() {
             Some(Ok((sloc, tok))) => Err(Error::Parser(
@@ -379,7 +375,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse(&mut self) -> Result<NodeRef, Error> {
+    fn parse(&mut self) -> Result<Box<Node>, Error> {
         let (sloc, tok) = self.lexer.peek().ok_or(Error::UnexpectedEOF)??;
         if tok == Tok::If {
             self.lexer.next();
@@ -388,13 +384,13 @@ impl<'a> Parser<'a> {
             let op1 = self.parse_expr1()?;
             self.expect_token(Tok::Else)?;
             let op2 = self.parse_expr1()?;
-            return Ok(Rc::new(RefCell::new(Node::IfThenElse {
+            return Ok(Box::new(Node::IfThenElse {
                 sloc,
                 typ: None,
                 op0,
                 op1,
                 op2,
-            })));
+            }));
         }
 
         if tok == Tok::Let {
@@ -409,13 +405,13 @@ impl<'a> Parser<'a> {
                 self.expect_token(Tok::In)?;
                 self.parse()?
             };
-            return Ok(Rc::new(RefCell::new(Node::LetIn {
+            return Ok(Box::new(Node::LetIn {
                 sloc,
                 name,
                 typ: None,
                 value,
                 body,
-            })));
+            }));
         }
 
         self.parse_expr1()
@@ -440,7 +436,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_binop(&mut self, min_prec: usize) -> Result<Rc<RefCell<Node>>, Error> {
+    fn parse_binop(&mut self, min_prec: usize) -> Result<Box<Node>, Error> {
         let mut lhs = self.parse_expr0()?;
         while let Some(Ok((sloc, tok))) = self.lexer.peek() {
             let (binop, prec, leftassoc, iscmp) = match Self::binop_precedence(&tok) {
@@ -452,23 +448,23 @@ impl<'a> Parser<'a> {
 
             let next_min_prev = if leftassoc { prec + 1 } else { prec };
             let rhs = self.parse_binop(next_min_prev)?;
-            lhs = Rc::new(RefCell::new(Node::BinOp {
+            lhs = Box::new(Node::BinOp {
                 sloc,
                 typ: None,
                 op: binop,
                 lhs,
                 rhs,
                 iscmp
-            }));
+            });
         }
         Ok(lhs)
     }
 
-    fn parse_expr1(&mut self) -> Result<Rc<RefCell<Node>>, Error> {
+    fn parse_expr1(&mut self) -> Result<Box<Node>, Error> {
         self.parse_binop(0)
     }
 
-    fn parse_expr0(&mut self) -> Result<Rc<RefCell<Node>>, Error> {
+    fn parse_expr0(&mut self) -> Result<Box<Node>, Error> {
         let mut expr = self.parse_final()?;
         loop {
             if self.consume_if(Tok::LParen) {
@@ -489,12 +485,12 @@ impl<'a> Parser<'a> {
                     ));
                 }
 
-                expr = Rc::new(RefCell::new(Node::Call {
+                expr = Box::new(Node::Call {
                     sloc: self.consumed_sloc,
                     typ: None,
                     callable: expr,
                     args,
-                }));
+                });
                 continue;
             }
             break;
@@ -502,9 +498,9 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn parse_final(&mut self) -> Result<NodeRef, Error> {
+    fn parse_final(&mut self) -> Result<Box<Node>, Error> {
         let (sloc, tok) = self.lexer.next().ok_or(Error::UnexpectedEOF)??;
-        Ok(Rc::new(RefCell::new(match tok {
+        Ok(Box::new(match tok {
             Tok::Id(name) => Node::Id {
                 sloc,
                 typ: None,
@@ -555,7 +551,7 @@ impl<'a> Parser<'a> {
                     sloc,
                     typ: None,
                     args,
-                    body,
+                    body: Rc::new(RefCell::new(*body)),
                 }
             },
             Tok::Forall => {
@@ -574,10 +570,10 @@ impl<'a> Parser<'a> {
                 self.expect_token(Tok::RParen)?;
                 self.expect_token(Tok::Arrow)?;
                 let rettyp = self.parse()?;
-                Node::Forall { sloc, typ: None, argtypes, rettyp }
+                Node::Forall { sloc, typ: None, argtypes, rettyp: Rc::new(RefCell::new(*rettyp)) }
             },
             _ => unimplemented!(),
-        })))
+        }))
     }
 }
 
@@ -588,14 +584,10 @@ mod tests {
     fn parse(
         input: &'static str,
         spool: &mut std::collections::HashSet<Rc<str>>,
-    ) -> Result<Rc<RefCell<Node>>, Error> {
+    ) -> Result<Box<Node>, Error> {
         let mut lexer = Lexer::new(input, 0, spool);
         let mut parser = Parser::new(&mut lexer);
         parser.parse()
-    }
-
-    fn clone_node(node: &NodeRef) -> Node {
-        (&*node.borrow()).clone()
     }
 
     #[test]
@@ -603,19 +595,19 @@ mod tests {
         let mut spool = std::collections::HashSet::new();
         let node = parse("let inc = λ(x: Int) -> x + 1 in inc(41)", &mut spool).unwrap();
 
-        assert!(match clone_node(&node) {
+        assert!(match node.as_ref() {
             Node::LetIn {
                 name, value, body, ..
             } if name.as_ref() == "inc" =>
-                (match clone_node(&value) {
+                (match value.as_ref() {
                     Node::Lambda { args, body, .. } if args.len() == 1 =>
                         (match &args[0] {
-                            (name, None, typ) if name.as_ref() == "x" => match &*typ.borrow() {
+                            (name, None, typ) if name.as_ref() == "x" => match typ.as_ref() {
                                 Node::Id { name, .. } if name.as_ref() == "Int" => true,
                                 _ => false,
                             },
                             _ => false,
-                        } && match clone_node(&body) {
+                        } && match &*body.borrow() {
                             Node::BinOp {
                                 op: BinOp::Add,
                                 lhs,
@@ -623,23 +615,23 @@ mod tests {
                                 iscmp: false,
                                 ..
                             } =>
-                                (match clone_node(&lhs) {
+                                (match lhs.as_ref() {
                                     Node::Id { name, .. } if name.as_ref() == "x" => true,
                                     _ => false,
-                                } && match clone_node(&rhs) {
-                                    Node::Integer { value, .. } if value == 1 => true,
+                                } && match rhs.as_ref() {
+                                    Node::Integer { value, .. } if *value == 1 => true,
                                     _ => false,
                                 }),
                             _ => false,
                         }),
                     _ => false,
-                } && match clone_node(&body) {
+                } && match body.as_ref() {
                     Node::Call { callable, args, .. } if args.len() == 1 =>
-                        (match clone_node(&callable) {
+                        (match callable.as_ref() {
                             Node::Id { name, .. } if name.as_ref() == "inc" => true,
                             _ => false,
-                        } && match clone_node(&args[0]) {
-                            Node::Integer { value, .. } if value == 41 => true,
+                        } && match args[0].as_ref() {
+                            Node::Integer { value, .. } if *value == 41 => true,
                             _ => false,
                         }),
                     _ => false,

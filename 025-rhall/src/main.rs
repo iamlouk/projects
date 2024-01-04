@@ -21,11 +21,11 @@ fn main() {
     let mut env = Env::new();
     let mut lexer = Lexer::new(buf.as_str(), 0, &mut env.string_pool);
     let mut parser = Parser::new(&mut lexer);
-    let node = parser.parse_all().expect("parsing failure");
-    println!("# AST: {}", node.as_ref().borrow());
-    println!("# TYP: {}", node.borrow_mut().typecheck(&mut env).expect("typecheck failure"));
+    let mut node = parser.parse_all().expect("parsing failure");
+    println!("# AST: {}", node.as_ref());
+    println!("# TYP: {}", node.typecheck(&mut env).expect("typecheck failure"));
 
-    match env.eval(&node) {
+    match env.eval(node.as_ref()) {
         Ok(val) => println!("{}", val),
         Err(e) => eprintln!("{:?}", e),
     };
