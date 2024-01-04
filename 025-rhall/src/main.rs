@@ -18,13 +18,13 @@ fn main() {
         .read_to_string(&mut buf)
         .expect("I/O failure");
 
-    let mut spool = std::collections::HashSet::<std::rc::Rc<str>>::new();
-    let mut lexer = Lexer::new(buf.as_str(), 0, &mut spool);
+    let mut env = Env::new();
+    let mut lexer = Lexer::new(buf.as_str(), 0, &mut env.string_pool);
     let mut parser = Parser::new(&mut lexer);
     let node = parser.parse_all().expect("parsing failure");
     println!("# AST: {}", node.as_ref().borrow());
+    println!("# TYP: {}", node.borrow_mut().typecheck(&mut env).expect("typecheck failure"));
 
-    let mut env = Env::new();
     match env.eval(&node) {
         Ok(val) => println!("{}", val),
         Err(e) => eprintln!("{:?}", e),
@@ -37,7 +37,6 @@ mod test {
 
     #[test]
     fn examples() {
-        let mut spool = std::collections::HashSet::<std::rc::Rc<str>>::new();
         let mut env = Env::new();
 
         use std::path::PathBuf;
@@ -56,11 +55,16 @@ mod test {
             let sourcecode = std::fs::read_to_string(&path).unwrap();
             eprintln!("running example: {}", name);
 
-            let mut lexer = Lexer::new(sourcecode.as_str(), 0, &mut spool);
+            let mut lexer = Lexer::new(sourcecode.as_str(), 0, &mut env.string_pool);
             let mut parser = Parser::new(&mut lexer);
             let example = parser.parse_all().expect("parsing failed");
-            let res = format!("{}", env.eval(&example).expect("evaluation failed"));
 
+            // TODO: Implement type-inference for recursive named lambdas or
+            //       add syntax for hinting the return type of a lambda.
+            // TODO: Or both...
+            // example.borrow_mut().typecheck(&mut env).expect("type check failed");
+
+            let res = format!("{}", env.eval(&example).expect("evaluation failed"));
             assert_eq!(expected.trim(), res.trim());
 
             path.pop();

@@ -3,7 +3,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::{ast::NodeRef, lex};
+use crate::{ast::NodeRef, lex, eval::Env};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SLoc {
@@ -24,31 +24,31 @@ pub enum Error {
     },
     UndefinedValue(Rc<str>),
     Uncallable(NodeRef),
-    ExpectedType(SLoc)
+    ExpectedType(SLoc),
+    TypeError(SLoc, String)
 }
 
 // TODO: Do something string_pool like for types?
 // As types will basically never change but be shared/cross-reference a lot
 // that would be nice and beneficial.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
-    Unresolved(Option<NodeRef>),
     Boolean,
     Integer,
     String,
     Type,
+    TypeType,
     Lambda(Vec<(Rc<str>, Rc<Type>)>, Rc<Type>),
 }
 
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Type::Unresolved(None) => write!(f, "???"),
-            Type::Unresolved(Some(node)) => write!(f, "{} /* Unresolved */", node.as_ref().borrow()),
             Type::Boolean => write!(f, "Bool"),
             Type::Integer => write!(f, "Int"),
             Type::String => write!(f, "Str"),
             Type::Type => write!(f, "Type"),
+            Type::TypeType => write!(f, "TypeType"),
             Type::Lambda(args, rettyp) => {
                 write!(f, "∀(")?;
                 for (i, (name, argtyp)) in args.iter().enumerate() {
@@ -67,6 +67,18 @@ pub enum Value {
     Str(Rc<str>),
     Type(Option<Rc<str>>, Rc<Type>),
     Lambda(Vec<(Rc<str>, Rc<Type>)>, NodeRef),
+}
+
+impl Value {
+    pub fn get_type(&self, env: &Env) -> Rc<Type> {
+        match self {
+            Value::Bool(_) => env.bool_type.clone(),
+            Value::Int(_) => env.int_type.clone(),
+            Value::Str(_) => env.str_type.clone(),
+            Value::Type(_, _) => env.type_type.clone(),
+            Value::Lambda(args, body) => Rc::new(Type::Lambda(args.clone(), body.borrow().get_type())),
+        }
+    }
 }
 
 impl Display for Value {
