@@ -2,7 +2,7 @@ use std::{rc::Rc, collections::{HashSet, HashMap}};
 
 use crate::{
     ast::{BinOp, Node},
-    core::{Error, Type, Value, SLoc},
+    core::{Error, Type, Value},
 };
 
 pub struct Env {
@@ -28,12 +28,12 @@ impl Env {
             int_type: Rc::new(Type::Integer),
             bool_type: Rc::new(Type::Boolean),
             str_type: Rc::new(Type::String),
-            type_type: Rc::new(Type::Type)
+            type_type: Rc::new(Type::Type(None))
         };
-        env.globals.insert("Int", Value::Type(None, env.int_type.clone()));
-        env.globals.insert("Bool", Value::Type(None, env.bool_type.clone()));
-        env.globals.insert("Str", Value::Type(None, env.str_type.clone()));
-        env.globals.insert("Type", Value::Type(None, env.type_type.clone()));
+        env.globals.insert("Int", Value::Type(env.int_type.clone()));
+        env.globals.insert("Bool", Value::Type(env.bool_type.clone()));
+        env.globals.insert("Str", Value::Type(env.str_type.clone()));
+        env.globals.insert("Type", Value::Type(env.type_type.clone()));
         env
     }
 
@@ -43,16 +43,6 @@ impl Env {
             return Some(val.clone());
         }
         self.globals.get(name).cloned()
-    }
-
-    #[allow(unused)]
-    pub fn lookup_type(&self, name: &str, sloc: SLoc) -> Result<Rc<Type>, Error> {
-        match self.lookup(name) {
-            Some(Value::Type(_, t)) => Ok(t),
-            Some(v) => Err(Error::TypeError(sloc, format!("type expected, found: {}", v))),
-            None => Err(Error::TypeError(sloc,
-                    format!("expected type, found nothing for '{}'", name)))
-        }
     }
 
     #[allow(unused)]
@@ -80,6 +70,7 @@ impl Env {
             Node::Integer { value, .. } => Ok(Value::Int(*value)),
             Node::Boolean { value, .. } => Ok(Value::Bool(*value)),
             Node::String { value, .. } => Ok(Value::Str(value.clone())),
+            Node::TypeAnno { op0, .. } => self.eval(op0),
             Node::Invert { op0, .. } => Ok(match self.eval(op0)? {
                 Value::Bool(value) => Value::Bool(!value),
                 Value::Int(value) => Value::Int(!value),
@@ -131,12 +122,12 @@ impl Env {
                 let mut args = Vec::with_capacity(argtypes.len());
                 for (name, argtyp, rawargtyp) in argtypes.iter() {
                     if let Some(typ) = argtyp {
-                        self.push(name, Value::Type(None, typ.clone()));
+                        self.push(name, Value::Type(typ.clone()));
                         args.push((name.clone(), typ.clone()));
                     } else {
                         let typval = self.eval(rawargtyp)?;
                         let typ = match typval {
-                            Value::Type(_, ref t) => t.clone(),
+                            Value::Type(ref t) => t.clone(),
                             _ => return Err(Error::ExpectedType(*sloc))
                         };
                         self.push(name, typval);
@@ -145,11 +136,11 @@ impl Env {
                 }
 
                 let rettyp = match self.eval(&rettyp.borrow())? {
-                    Value::Type(_, t) => t,
+                    Value::Type(t) => t,
                     _ => return Err(Error::ExpectedType(*sloc))
                 };
 
-                let res = Value::Type(None, Rc::new(Type::Lambda(args, rettyp)));
+                let res = Value::Type(Rc::new(Type::Lambda(args, rettyp)));
                 self.pop(argtypes.len());
                 Ok(res)
             }
@@ -176,18 +167,17 @@ mod tests {
     fn incto42() {
         let mut env = Env::new();
         let mut expr = parse("let inc = λ(x: Int) -> x + 1 in inc(41)").unwrap();
-        expr.typecheck(&mut env).expect("typecheck failed");
+        expr.typecheck(&mut env, None).expect("typecheck failed");
         assert_matches!(env.eval(&expr), Ok(Value::Int(42)));
     }
 
     #[test]
     fn fib10() {
         let mut env = Env::new();
-        let expr =
-            parse("let fib = λ(n: Int) -> if n < 2 then n else fib(n - 1) + fib(n - 2) in fib(10)")
+        let mut expr =
+            parse("let fib: ∀(n: Int) -> Int = λ(n: Int) -> if n < 2 then n else fib(n - 1) + fib(n - 2) in fib(10)")
                 .unwrap();
-        // TODO: Type-checking for recursive functions....
-        // expr.borrow_mut().typecheck(&mut env).expect("typecheck failed");
+        expr.typecheck(&mut env, None).expect("typecheck failed");
         assert_matches!(env.eval(&expr), Ok(Value::Int(55)));
     }
 }
