@@ -47,7 +47,7 @@ pub enum Node {
         sloc: SLoc,
         typ: Option<Rc<Type>>,
         op0: Box<Node>,
-        rawtyp: Box<Node>
+        rawtyp: Box<Node>,
     },
     Invert {
         sloc: SLoc,
@@ -93,26 +93,26 @@ pub enum Node {
         sloc: SLoc,
         typ: Option<Rc<Type>>,
         argtypes: Vec<(Rc<str>, Option<Rc<Type>>, Box<Node>)>,
-        rettyp: Rc<RefCell<Node>>
-    }
+        rettyp: Rc<RefCell<Node>>,
+    },
 }
 
 impl Node {
     #[allow(unused)]
     pub fn get_type(&self) -> Option<Rc<Type>> {
         let typ = match self {
-            Node::Id         { typ, .. } => typ,
-            Node::Integer    { typ, .. } => typ,
-            Node::Boolean    { typ, .. } => typ,
-            Node::String     { typ, .. } => typ,
-            Node::TypeAnno   { typ, .. } => typ,
-            Node::Invert     { typ, .. } => typ,
-            Node::BinOp      { typ, .. } => typ,
-            Node::Call       { typ, .. } => typ,
+            Node::Id { typ, .. } => typ,
+            Node::Integer { typ, .. } => typ,
+            Node::Boolean { typ, .. } => typ,
+            Node::String { typ, .. } => typ,
+            Node::TypeAnno { typ, .. } => typ,
+            Node::Invert { typ, .. } => typ,
+            Node::BinOp { typ, .. } => typ,
+            Node::Call { typ, .. } => typ,
             Node::IfThenElse { typ, .. } => typ,
-            Node::LetIn      { typ, .. } => typ,
-            Node::Lambda     { typ, .. } => typ,
-            Node::Forall     { typ, .. } => typ,
+            Node::LetIn { typ, .. } => typ,
+            Node::Lambda { typ, .. } => typ,
+            Node::Forall { typ, .. } => typ,
         };
         typ.clone()
     }
@@ -120,18 +120,18 @@ impl Node {
     #[allow(unused)]
     pub fn set_type(&mut self, t: Rc<Type>) {
         match self {
-            Node::Id         { typ, .. } => *typ = Some(t),
-            Node::Integer    { typ, .. } => *typ = Some(t),
-            Node::Boolean    { typ, .. } => *typ = Some(t),
-            Node::String     { typ, .. } => *typ = Some(t),
-            Node::TypeAnno   { typ, .. } => *typ = Some(t),
-            Node::Invert     { typ, .. } => *typ = Some(t),
-            Node::BinOp      { typ, .. } => *typ = Some(t),
-            Node::Call       { typ, .. } => *typ = Some(t),
+            Node::Id { typ, .. } => *typ = Some(t),
+            Node::Integer { typ, .. } => *typ = Some(t),
+            Node::Boolean { typ, .. } => *typ = Some(t),
+            Node::String { typ, .. } => *typ = Some(t),
+            Node::TypeAnno { typ, .. } => *typ = Some(t),
+            Node::Invert { typ, .. } => *typ = Some(t),
+            Node::BinOp { typ, .. } => *typ = Some(t),
+            Node::Call { typ, .. } => *typ = Some(t),
             Node::IfThenElse { typ, .. } => *typ = Some(t),
-            Node::LetIn      { typ, .. } => *typ = Some(t),
-            Node::Lambda     { typ, .. } => *typ = Some(t),
-            Node::Forall     { typ, .. } => *typ = Some(t),
+            Node::LetIn { typ, .. } => *typ = Some(t),
+            Node::Lambda { typ, .. } => *typ = Some(t),
+            Node::Forall { typ, .. } => *typ = Some(t),
         };
     }
 
@@ -143,126 +143,214 @@ impl Node {
                     let t = v.get_type(env);
                     *typ = Some(t.clone());
                     Ok(t)
-                },
-                None => Err(Error::TypeError(*sloc, format!("unknown: {} (if this is a recursive function, add a type annotation)", name.as_ref())))
+                }
+                None => Err(Error::TypeError(
+                    *sloc,
+                    format!(
+                        "unknown: {} (if this is a recursive function, add a type annotation)",
+                        name.as_ref()
+                    ),
+                )),
             },
             Node::Integer { typ: Some(t), .. } => Ok(t.clone()),
             Node::Integer { typ, .. } => {
                 let t = env.int_type.clone();
                 *typ = Some(t.clone());
                 Ok(t)
-            },
+            }
             Node::Boolean { typ: Some(t), .. } => Ok(t.clone()),
             Node::Boolean { typ, .. } => {
                 let t = env.bool_type.clone();
                 *typ = Some(t.clone());
                 Ok(t)
-            },
+            }
             Node::String { typ: Some(t), .. } => Ok(t.clone()),
             Node::String { typ, .. } => {
                 let t = env.str_type.clone();
                 *typ = Some(t.clone());
                 Ok(t)
-            },
+            }
             Node::TypeAnno { typ: Some(t), .. } => Ok(t.clone()),
-            Node::TypeAnno { sloc, typ, op0, rawtyp } => {
+            Node::TypeAnno {
+                sloc,
+                typ,
+                op0,
+                rawtyp,
+            } => {
                 let hint = rawtyp.typecheck_type(env, None, *sloc, "type annotation")?;
                 let optyp = op0.typecheck(env, Some(hint.clone()))?;
                 if optyp.as_ref() != hint.as_ref() && !matches!(optyp.as_ref(), Type::Type(_)) {
-                    return Err(Error::TypeError(*sloc, format!("type conflict: {} vs {}", optyp.as_ref(), hint.as_ref())));
+                    return Err(Error::TypeError(
+                        *sloc,
+                        format!("type conflict: {} vs {}", optyp.as_ref(), hint.as_ref()),
+                    ));
                 }
 
                 *typ = Some(optyp.clone());
                 Ok(optyp)
-            },
+            }
             Node::Invert { typ: Some(t), .. } => Ok(t.clone()),
             Node::Invert { sloc, typ, op0 } => {
                 let t = op0.typecheck(env, None)?;
                 if *t.as_ref() != Type::Boolean && *t.as_ref() != Type::Integer {
-                    return Err(Error::TypeError(*sloc,
-                            format!("invalid type for '~' operator: {}", t)))
+                    return Err(Error::TypeError(
+                        *sloc,
+                        format!("invalid type for '~' operator: {}", t),
+                    ));
                 }
                 *typ = Some(t.clone());
                 Ok(t)
-            },
+            }
             Node::BinOp { typ: Some(t), .. } => Ok(t.clone()),
-            Node::BinOp { sloc, typ, op, lhs, rhs, iscmp } => {
+            Node::BinOp {
+                sloc,
+                typ,
+                op,
+                lhs,
+                rhs,
+                iscmp,
+            } => {
                 let lhsty = lhs.typecheck(env, None)?;
                 let rhsty = rhs.typecheck(env, None)?;
                 if *lhsty != *rhsty {
-                    return Err(Error::TypeError(*sloc,
-                            format!("binary operator with different operand types: {} and {}",
-                                lhsty.as_ref(), rhsty.as_ref())))
+                    return Err(Error::TypeError(
+                        *sloc,
+                        format!(
+                            "binary operator with different operand types: {} and {}",
+                            lhsty.as_ref(),
+                            rhsty.as_ref()
+                        ),
+                    ));
                 }
 
                 let t = match (op, iscmp, lhsty.as_ref()) {
                     (_, true, Type::Integer) => env.bool_type.clone(),
                     (BinOp::And | BinOp::Or, _, Type::Boolean) => lhsty,
-                    (BinOp::And | BinOp::Or, _, _) => return Err(Error::TypeError(*sloc,
-                            "'&' and '|' only work for booleans".to_string())),
+                    (BinOp::And | BinOp::Or, _, _) => {
+                        return Err(Error::TypeError(
+                            *sloc,
+                            "'&' and '|' only work for booleans".to_string(),
+                        ))
+                    }
                     (_, false, Type::Integer) => lhsty,
-                    _ => unimplemented!()
+                    _ => unimplemented!(),
                 };
                 *typ = Some(t.clone());
                 Ok(t)
-            },
+            }
             Node::Call { typ: Some(t), .. } => Ok(t.clone()),
-            Node::Call { sloc, typ, callable, args } => match callable.typecheck(env, None)?.as_ref() {
+            Node::Call {
+                sloc,
+                typ,
+                callable,
+                args,
+            } => match callable.typecheck(env, None)?.as_ref() {
                 Type::Lambda(argtypes, rettyp) if argtypes.len() == args.len() => {
                     for (arg, (_, typ)) in args.iter_mut().zip(argtypes.iter()) {
                         let t = arg.typecheck(env, None)?;
                         if t.as_ref() != typ.as_ref() {
-                            return Err(Error::TypeError(*sloc, format!("argument has wrong type: {} has type {}, expected {}", arg, t, typ)));
+                            return Err(Error::TypeError(
+                                *sloc,
+                                format!(
+                                    "argument has wrong type: {} has type {}, expected {}",
+                                    arg, t, typ
+                                ),
+                            ));
                         }
                     }
                     *typ = Some(rettyp.clone());
                     Ok(rettyp.clone())
-                },
-                t => Err(Error::TypeError(*sloc, format!("cannot call: {} (type: {})", callable.as_ref(), t)))
+                }
+                t => Err(Error::TypeError(
+                    *sloc,
+                    format!("cannot call: {} (type: {})", callable.as_ref(), t),
+                )),
             },
             Node::IfThenElse { typ: Some(t), .. } => Ok(t.clone()),
-            Node::IfThenElse { sloc, typ, op0, op1, op2 } => {
+            Node::IfThenElse {
+                sloc,
+                typ,
+                op0,
+                op1,
+                op2,
+            } => {
                 let op0ty = op0.typecheck(env, None)?;
                 if op0ty.as_ref() != &Type::Boolean {
-                    return Err(Error::TypeError(*sloc,
-                            format!("condition of if-then-else needs to be a boolean, not: {}",
-                                op0ty.as_ref())))
+                    return Err(Error::TypeError(
+                        *sloc,
+                        format!(
+                            "condition of if-then-else needs to be a boolean, not: {}",
+                            op0ty.as_ref()
+                        ),
+                    ));
                 }
 
                 let op1ty = op1.typecheck(env, None)?;
                 let op2ty = op2.typecheck(env, None)?;
                 if op1ty.as_ref() != op2ty.as_ref() {
-                    return Err(Error::TypeError(*sloc,
-                            format!("branches of if-then-else needs to be of same type, not: {} and {}",
-                                op1ty.as_ref(), op2ty.as_ref())))
+                    return Err(Error::TypeError(
+                        *sloc,
+                        format!(
+                            "branches of if-then-else needs to be of same type, not: {} and {}",
+                            op1ty.as_ref(),
+                            op2ty.as_ref()
+                        ),
+                    ));
                 }
 
                 *typ = Some(op1ty);
                 Ok(op2ty)
-            },
+            }
             Node::LetIn { typ: Some(t), .. } => Ok(t.clone()),
-            Node::LetIn { typ, name, value, typeannot: None, body, .. } => {
+            Node::LetIn {
+                typ,
+                name,
+                value,
+                typeannot: None,
+                body,
+                ..
+            } => {
                 let valtyp = value.typecheck(env, None)?;
                 env.push(name, Value::Pseudo(valtyp));
                 let bodytyp = body.typecheck(env, None)?;
                 env.pop(1);
                 *typ = Some(bodytyp.clone());
                 Ok(bodytyp)
-            },
-            Node::LetIn { sloc, typ, name, value, typeannot: Some(rawtypeannot), body } => {
+            }
+            Node::LetIn {
+                sloc,
+                typ,
+                name,
+                value,
+                typeannot: Some(rawtypeannot),
+                body,
+            } => {
                 let valtyphint = rawtypeannot.typecheck_type(env, None, *sloc, "let-in")?;
                 env.push(name, Value::Pseudo(valtyphint.clone()));
                 let valtyp = value.typecheck(env, Some(valtyphint.clone()))?;
                 if valtyphint.as_ref() != valtyp.as_ref() {
-                    return Err(Error::TypeError(*sloc, format!("computed type: {}, expected: {}", valtyp.as_ref(), valtyphint.as_ref())));
+                    return Err(Error::TypeError(
+                        *sloc,
+                        format!(
+                            "computed type: {}, expected: {}",
+                            valtyp.as_ref(),
+                            valtyphint.as_ref()
+                        ),
+                    ));
                 }
                 let bodytyp = body.typecheck(env, None)?;
                 env.pop(1);
                 *typ = Some(bodytyp.clone());
                 Ok(bodytyp)
-            },
+            }
             Node::Lambda { typ: Some(t), .. } => Ok(t.clone()),
-            Node::Lambda { sloc, typ, args, body, .. } => {
+            Node::Lambda {
+                sloc,
+                typ,
+                args,
+                body,
+                ..
+            } => {
                 for (name, argtyp, rawargtyp) in args.iter_mut() {
                     let t = rawargtyp.typecheck_type(env, None, *sloc, "lambda (argument)")?;
                     *argtyp = Some(t.clone());
@@ -271,20 +359,39 @@ impl Node {
 
                 let rettyp = body.borrow_mut().typecheck(env, None)?;
                 env.pop(args.len());
-                let t = Rc::new(Type::Lambda(args.iter().map(|(name, t, _)| (name.clone(), t.clone().unwrap())).collect(), rettyp));
+                let t = Rc::new(Type::Lambda(
+                    args.iter()
+                        .map(|(name, t, _)| (name.clone(), t.clone().unwrap()))
+                        .collect(),
+                    rettyp,
+                ));
                 *typ = Some(t.clone());
                 Ok(t)
-            },
+            }
             Node::Forall { typ: Some(t), .. } => Ok(t.clone()),
-            Node::Forall { sloc, typ, argtypes, rettyp } => {
+            Node::Forall {
+                sloc,
+                typ,
+                argtypes,
+                rettyp,
+            } => {
                 for (name, argtyp, rawargtyp) in argtypes.iter_mut() {
                     let t = rawargtyp.typecheck_type(env, None, *sloc, "forall (argument)")?;
                     *argtyp = Some(t.clone());
                     env.push(name, Value::Pseudo(t));
                 }
-                let rettyp = rettyp.borrow_mut().typecheck_type(env, None, *sloc, "forall (return type)")?;
+                let rettyp =
+                    rettyp
+                        .borrow_mut()
+                        .typecheck_type(env, None, *sloc, "forall (return type)")?;
                 env.pop(argtypes.len());
-                let t = Rc::new(Type::Lambda(argtypes.iter().map(|(name, t, _)| (name.clone(), t.clone().unwrap())).collect(), rettyp));
+                let t = Rc::new(Type::Lambda(
+                    argtypes
+                        .iter()
+                        .map(|(name, t, _)| (name.clone(), t.clone().unwrap()))
+                        .collect(),
+                    rettyp,
+                ));
                 let t = Rc::new(Type::Type(Some(t)));
                 *typ = Some(t.clone());
                 Ok(t)
@@ -292,12 +399,26 @@ impl Node {
         }
     }
 
-    pub fn typecheck_type(&mut self, env: &mut Env, hint: Option<Rc<Type>>, sloc: SLoc, explain: &'static str) -> Result<Rc<Type>, Error> {
+    pub fn typecheck_type(
+        &mut self,
+        env: &mut Env,
+        hint: Option<Rc<Type>>,
+        sloc: SLoc,
+        explain: &'static str,
+    ) -> Result<Rc<Type>, Error> {
         let t = self.typecheck(env, hint)?;
         match t.as_ref() {
             Type::Type(Some(t)) => Ok(t.clone()),
             Type::Type(None) => Ok(t.clone()),
-            _ => Err(Error::TypeError(sloc, format!("{}: expected a type, not {} of type {}", explain, self, t.as_ref())))
+            _ => Err(Error::TypeError(
+                sloc,
+                format!(
+                    "{}: expected a type, not {} of type {}",
+                    explain,
+                    self,
+                    t.as_ref()
+                ),
+            )),
         }
     }
 }
@@ -310,35 +431,68 @@ impl std::fmt::Display for Node {
             Node::Boolean { value: true, .. } => f.write_str("⊤"),
             Node::Boolean { value: false, .. } => f.write_str("⊥"),
             Node::String { value, .. } => write!(f, "{:?}", value.as_ref()),
-            Node::TypeAnno { typ: Some(t), op0, .. } =>
-                write!(f, "({} : {})", op0.as_ref(), t.as_ref()),
-            Node::TypeAnno { typ: None, op0, rawtyp, .. } =>
-                write!(f, "({} : {})", op0.as_ref(), rawtyp.as_ref()),
+            Node::TypeAnno {
+                typ: Some(t), op0, ..
+            } => write!(f, "({} : {})", op0.as_ref(), t.as_ref()),
+            Node::TypeAnno {
+                typ: None,
+                op0,
+                rawtyp,
+                ..
+            } => write!(f, "({} : {})", op0.as_ref(), rawtyp.as_ref()),
             Node::Invert { op0, .. } => write!(f, "(~{})", op0.as_ref()),
-            Node::BinOp { op, lhs, rhs, .. } =>
-                write!(f, "({} {} {})",
-                    lhs.as_ref(),
-                    match op { BinOp::Add => "+", BinOp::Sub => "-", BinOp::Mul => "*",
-                               BinOp::Div => "*", BinOp::And => "&", BinOp::Or => "|",
-                               BinOp::EQ => "==", BinOp::NE => "!=", BinOp::LT => "<",
-                               BinOp::LE => "<=", BinOp::GT => ">", BinOp::GE => "<=" },
-                    rhs.as_ref()),
+            Node::BinOp { op, lhs, rhs, .. } => write!(
+                f,
+                "({} {} {})",
+                lhs.as_ref(),
+                match op {
+                    BinOp::Add => "+",
+                    BinOp::Sub => "-",
+                    BinOp::Mul => "*",
+                    BinOp::Div => "*",
+                    BinOp::And => "&",
+                    BinOp::Or => "|",
+                    BinOp::EQ => "==",
+                    BinOp::NE => "!=",
+                    BinOp::LT => "<",
+                    BinOp::LE => "<=",
+                    BinOp::GT => ">",
+                    BinOp::GE => "<=",
+                },
+                rhs.as_ref()
+            ),
             Node::Call { callable, args, .. } => {
                 write!(f, "{}(", callable.as_ref())?;
                 for (i, arg) in args.iter().enumerate() {
-                    if i != 0 { write!(f, ", ")?; }
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", arg)?;
                 }
                 write!(f, ")")
-            },
-            Node::IfThenElse { op0, op1, op2, .. } =>
-                write!(f, "if ({}) then ({}) else ({})", op0.as_ref(), op1.as_ref(), op2.as_ref()),
-            Node::LetIn { name, value, body, .. } =>
-                write!(f, "let {} = {} in {}", name.as_ref(), value.as_ref(), body.as_ref()),
+            }
+            Node::IfThenElse { op0, op1, op2, .. } => write!(
+                f,
+                "if ({}) then ({}) else ({})",
+                op0.as_ref(),
+                op1.as_ref(),
+                op2.as_ref()
+            ),
+            Node::LetIn {
+                name, value, body, ..
+            } => write!(
+                f,
+                "let {} = {} in {}",
+                name.as_ref(),
+                value.as_ref(),
+                body.as_ref()
+            ),
             Node::Lambda { args, body, .. } => {
                 write!(f, "λ(")?;
                 for (i, (name, typ, rawtyp)) in args.iter().enumerate() {
-                    if i != 0 { write!(f, ", ")?; }
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
                     if let Some(t) = typ {
                         write!(f, "{}: {}", name.as_ref(), t.as_ref())?;
                     } else {
@@ -346,11 +500,15 @@ impl std::fmt::Display for Node {
                     }
                 }
                 write!(f, ") -> {}", body.borrow())
-            },
-            Node::Forall { argtypes, rettyp, .. } => {
+            }
+            Node::Forall {
+                argtypes, rettyp, ..
+            } => {
                 write!(f, "∀(")?;
                 for (i, (name, typ, rawtyp)) in argtypes.iter().enumerate() {
-                    if i != 0 { write!(f, ", ")?; }
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
                     if let Some(t) = typ {
                         write!(f, "{}: {}", name.as_ref(), t.as_ref())?;
                     } else {
@@ -358,13 +516,15 @@ impl std::fmt::Display for Node {
                     }
                 }
                 write!(f, ") -> {}", rettyp.borrow())
-            },
+            }
         }
     }
 }
 
 impl PartialEq for Node {
-    fn eq(&self, _other: &Self) -> bool { false }
+    fn eq(&self, _other: &Self) -> bool {
+        false
+    }
 }
 
 pub struct Parser<'a> {
@@ -400,13 +560,11 @@ impl<'a> Parser<'a> {
     fn expect_id(&mut self) -> Result<(SLoc, Rc<str>), Error> {
         match self.lexer.next().ok_or(Error::UnexpectedEOF)?? {
             (sloc, Tok::Id(name)) => Ok((sloc, name)),
-            (sloc, t) => {
-                Err(Error::ExpectedToken {
-                    sloc,
-                    expected: Tok::Id(Rc::from("<whatever>")),
-                    found: t,
-                })
-            }
+            (sloc, t) => Err(Error::ExpectedToken {
+                sloc,
+                expected: Tok::Id(Rc::from("<whatever>")),
+                found: t,
+            }),
         }
     }
 
@@ -456,7 +614,7 @@ impl<'a> Parser<'a> {
             let (_, name) = self.expect_id()?;
             let typhint = match self.consume_if(Tok::Colon) {
                 true => Some(self.parse_final()?),
-                false => None
+                false => None,
             };
             self.expect_token(Tok::Assign)?;
             let value = self.parse()?;
@@ -495,7 +653,7 @@ impl<'a> Parser<'a> {
             Tok::GreaterOrEqual => Some((BinOp::GE, 80, true, true)),
             Tok::Ampersand => Some((BinOp::And, 70, true, false)),
             Tok::Pipe => Some((BinOp::Or, 70, true, false)),
-            _ => None
+            _ => None,
         }
     }
 
@@ -504,7 +662,7 @@ impl<'a> Parser<'a> {
         while let Some(Ok((sloc, tok))) = self.lexer.peek() {
             let (binop, prec, leftassoc, iscmp) = match Self::binop_precedence(&tok) {
                 Some(t) if t.1 >= min_prec => t,
-                _ => break
+                _ => break,
             };
 
             self.lexer.next().unwrap().unwrap();
@@ -517,7 +675,7 @@ impl<'a> Parser<'a> {
                 op: binop,
                 lhs,
                 rhs,
-                iscmp
+                iscmp,
             });
         }
         Ok(lhs)
@@ -563,7 +721,7 @@ impl<'a> Parser<'a> {
                     sloc: self.consumed_sloc,
                     typ: None,
                     op0: expr,
-                    rawtyp: typhint
+                    rawtyp: typhint,
                 });
                 continue;
             }
@@ -628,7 +786,7 @@ impl<'a> Parser<'a> {
                     args,
                     body: Rc::new(RefCell::new(*body)),
                 }
-            },
+            }
             Tok::Forall => {
                 self.expect_token(Tok::LParen)?;
                 let mut argtypes = vec![];
@@ -645,8 +803,13 @@ impl<'a> Parser<'a> {
                 self.expect_token(Tok::RParen)?;
                 self.expect_token(Tok::Arrow)?;
                 let rettyp = self.parse()?;
-                Node::Forall { sloc, typ: None, argtypes, rettyp: Rc::new(RefCell::new(*rettyp)) }
-            },
+                Node::Forall {
+                    sloc,
+                    typ: None,
+                    argtypes,
+                    rettyp: Rc::new(RefCell::new(*rettyp)),
+                }
+            }
             _ => unimplemented!(),
         }))
     }

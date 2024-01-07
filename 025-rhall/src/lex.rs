@@ -52,7 +52,7 @@ pub enum Tok {
     Lower,
     LowerOrEqual,
     Greater,
-    GreaterOrEqual
+    GreaterOrEqual,
 }
 
 impl<'a> Lexer<'a> {
@@ -266,8 +266,8 @@ impl<'a> std::iter::Iterator for Lexer<'a> {
                 Some('=') => {
                     self.next_char();
                     Ok((self.sloc, Tok::NotEqual))
-                },
-                _ => todo!()
+                }
+                _ => todo!(),
             },
             '<' => match self.chars.peek() {
                 Some('=') => {
@@ -281,7 +281,7 @@ impl<'a> std::iter::Iterator for Lexer<'a> {
                     self.next_char();
                     Ok((self.sloc, Tok::GreaterOrEqual))
                 }
-                _ => Ok((self.sloc, Tok::Greater))
+                _ => Ok((self.sloc, Tok::Greater)),
             },
 
             '\\' | 'λ' => Ok((self.sloc, Tok::Lambda)),

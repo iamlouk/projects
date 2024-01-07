@@ -1,9 +1,10 @@
 use std::{
+    cell::RefCell,
     fmt::{Debug, Display},
-    rc::Rc, cell::RefCell,
+    rc::Rc,
 };
 
-use crate::{lex, eval::Env, ast::Node};
+use crate::{ast::Node, eval::Env, lex};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SLoc {
@@ -51,7 +52,13 @@ impl Display for Type {
             Type::Lambda(args, rettyp) => {
                 write!(f, "∀(")?;
                 for (i, (name, argtyp)) in args.iter().enumerate() {
-                    write!(f, "{}{}: {}", if i != 0 { ", " } else { "" }, name.as_ref(), argtyp)?;
+                    write!(
+                        f,
+                        "{}{}: {}",
+                        if i != 0 { ", " } else { "" },
+                        name.as_ref(),
+                        argtyp
+                    )?;
                 }
                 write!(f, ") -> {}", rettyp)
             }
@@ -67,11 +74,15 @@ impl PartialEq for Type {
             (Type::String, Type::String) => true,
             (Type::Type(Some(t1)), Type::Type(Some(t2))) => t1 == t2,
             (Type::Type(_), Type::Type(_)) => true, // TODO: Check stuff like: 1 -> Int -> Type -> Kind...
-            (Type::Lambda(args1, rettyp1), Type::Lambda(args2, rettyp2)) =>
-                args1.len() == args2.len() &&
-                args1.iter().zip(args2.iter()).all(|((_, t1), (_, t2))| t1.as_ref() == t2.as_ref()) &&
-                rettyp1.as_ref() == rettyp2.as_ref(),
-            (_, _) => false
+            (Type::Lambda(args1, rettyp1), Type::Lambda(args2, rettyp2)) => {
+                args1.len() == args2.len()
+                    && args1
+                        .iter()
+                        .zip(args2.iter())
+                        .all(|((_, t1), (_, t2))| t1.as_ref() == t2.as_ref())
+                    && rettyp1.as_ref() == rettyp2.as_ref()
+            }
+            (_, _) => false,
         }
     }
 }
@@ -94,7 +105,10 @@ impl Value {
             Value::Int(_) => env.int_type.clone(),
             Value::Str(_) => env.str_type.clone(),
             Value::Type(t) => Rc::new(Type::Type(Some(t.clone()))),
-            Value::Lambda(args, body) => Rc::new(Type::Lambda(args.clone(), body.borrow().get_type().unwrap())),
+            Value::Lambda(args, body) => Rc::new(Type::Lambda(
+                args.clone(),
+                body.borrow().get_type().unwrap(),
+            )),
         }
     }
 }

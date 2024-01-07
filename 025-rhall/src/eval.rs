@@ -1,4 +1,7 @@
-use std::{rc::Rc, collections::{HashSet, HashMap}};
+use std::{
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 use crate::{
     ast::{BinOp, Node},
@@ -15,7 +18,7 @@ pub struct Env {
     pub int_type: Rc<Type>,
     pub bool_type: Rc<Type>,
     pub str_type: Rc<Type>,
-    pub type_type: Rc<Type>
+    pub type_type: Rc<Type>,
 }
 
 impl Env {
@@ -28,12 +31,14 @@ impl Env {
             int_type: Rc::new(Type::Integer),
             bool_type: Rc::new(Type::Boolean),
             str_type: Rc::new(Type::String),
-            type_type: Rc::new(Type::Type(None))
+            type_type: Rc::new(Type::Type(None)),
         };
         env.globals.insert("Int", Value::Type(env.int_type.clone()));
-        env.globals.insert("Bool", Value::Type(env.bool_type.clone()));
+        env.globals
+            .insert("Bool", Value::Type(env.bool_type.clone()));
         env.globals.insert("Str", Value::Type(env.str_type.clone()));
-        env.globals.insert("Type", Value::Type(env.type_type.clone()));
+        env.globals
+            .insert("Type", Value::Type(env.type_type.clone()));
         env
     }
 
@@ -74,7 +79,7 @@ impl Env {
             Node::Invert { op0, .. } => Ok(match self.eval(op0)? {
                 Value::Bool(value) => Value::Bool(!value),
                 Value::Int(value) => Value::Int(!value),
-                _ => unimplemented!()
+                _ => unimplemented!(),
             }),
             Node::BinOp { op, lhs, rhs, .. } => Ok(match (op, self.eval(lhs)?, self.eval(rhs)?) {
                 (BinOp::Add, Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs + rhs),
@@ -87,7 +92,12 @@ impl Env {
                 (BinOp::LE, Value::Int(lhs), Value::Int(rhs)) => Value::Bool(lhs <= rhs),
                 (op, lhs, rhs) => panic!("op: {:?}, lhs: {:?}, rhs: {:?}", op, lhs, rhs),
             }),
-            Node::Call { sloc, callable, args, .. } => match self.eval(callable)? {
+            Node::Call {
+                sloc,
+                callable,
+                args,
+                ..
+            } => match self.eval(callable)? {
                 Value::Lambda(argnames, body) if argnames.len() == args.len() => {
                     for (i, (name, _)) in argnames.iter().enumerate() {
                         let arg = self.eval(&args[i])?;
@@ -115,10 +125,17 @@ impl Env {
                 Ok(res)
             }
             Node::Lambda { args, body, .. } => Ok(Value::Lambda(
-                    args.iter().map(|(name, typ, _)|
-                        (name.clone(), typ.clone().unwrap())).collect(),
-                    body.clone())),
-            Node::Forall { sloc, argtypes, rettyp, .. } => {
+                args.iter()
+                    .map(|(name, typ, _)| (name.clone(), typ.clone().unwrap()))
+                    .collect(),
+                body.clone(),
+            )),
+            Node::Forall {
+                sloc,
+                argtypes,
+                rettyp,
+                ..
+            } => {
                 let mut args = Vec::with_capacity(argtypes.len());
                 for (name, argtyp, rawargtyp) in argtypes.iter() {
                     if let Some(typ) = argtyp {
@@ -128,7 +145,7 @@ impl Env {
                         let typval = self.eval(rawargtyp)?;
                         let typ = match typval {
                             Value::Type(ref t) => t.clone(),
-                            _ => return Err(Error::ExpectedType(*sloc))
+                            _ => return Err(Error::ExpectedType(*sloc)),
                         };
                         self.push(name, typval);
                         args.push((name.clone(), typ));
@@ -137,7 +154,7 @@ impl Env {
 
                 let rettyp = match self.eval(&rettyp.borrow())? {
                     Value::Type(t) => t,
-                    _ => return Err(Error::ExpectedType(*sloc))
+                    _ => return Err(Error::ExpectedType(*sloc)),
                 };
 
                 let res = Value::Type(Rc::new(Type::Lambda(args, rettyp)));
