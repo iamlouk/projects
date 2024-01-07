@@ -125,10 +125,18 @@ impl<'a> Lexer<'a> {
 
             if c == '/' && self.chars.peek().cloned() == Some('*') {
                 self.chars.next();
+                let mut depth = 0;
                 while let Some(c) = self.next_char() {
+                    if c == '/' && self.chars.peek().cloned() == Some('*') {
+                        self.chars.next();
+                        depth += 1;
+                    }
                     if c == '*' && self.chars.peek().cloned() == Some('/') {
                         self.chars.next();
-                        continue 'outer;
+                        depth -= 1;
+                        if depth == 0 {
+                            continue 'outer;
+                        }
                     }
                 }
             }
@@ -342,7 +350,7 @@ impl<'a> std::iter::Iterator for Lexer<'a> {
                 self.buffer.push(c);
                 // This loop will be entered a lot and can surely be optimized...
                 while let Some(c) = self.chars.peek() {
-                    if !c.is_alphanumeric() && *c != '_' {
+                    if !c.is_alphanumeric() && *c != '_' && *c != '/' {
                         break;
                     }
                     let c = self.next_char().unwrap();

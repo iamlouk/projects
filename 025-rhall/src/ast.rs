@@ -1,7 +1,7 @@
 use std::fmt;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::core::{Error, SLoc, Type, Value};
+use crate::core::{Error, SLoc, Type, TypeParam, Value};
 use crate::eval::Env;
 use crate::lex::{Lexer, Tok};
 
@@ -179,7 +179,7 @@ impl Node {
             } => {
                 let hint = rawtyp.typecheck_type(env, None, *sloc, "type annotation")?;
                 let optyp = op0.typecheck(env, Some(hint.clone()))?;
-                if optyp.as_ref() != hint.as_ref() && !matches!(optyp.as_ref(), Type::Type(_)) {
+                if optyp.as_ref() != hint.as_ref() {
                     return Err(Error::TypeError(
                         *sloc,
                         format!("type conflict: {} vs {}", optyp.as_ref(), hint.as_ref()),
@@ -246,8 +246,19 @@ impl Node {
                 args,
             } => match callable.typecheck(env, None)?.as_ref() {
                 Type::Lambda(argtypes, rettyp) if argtypes.len() == args.len() => {
+                    let mut rettyp = rettyp.clone();
                     for (arg, (_, typ)) in args.iter_mut().zip(argtypes.iter()) {
                         let t = arg.typecheck(env, None)?;
+                        /* These error messages are horrible and the checks probably far from perfect! */
+                        if let Type::Type(Some(tp), _) = typ.as_ref() {
+                            let Type::Type(_, Some(argt)) = t.as_ref() else {
+                                return Err(Error::TypeError(*sloc, format!("lambda call: expected a type parameter, not {}", t.as_ref())));
+                            };
+
+                            rettyp = rettyp.subst(tp, argt);
+                            continue;
+                        }
+
                         if t.as_ref() != typ.as_ref() {
                             return Err(Error::TypeError(
                                 *sloc,
@@ -259,7 +270,7 @@ impl Node {
                         }
                     }
                     *typ = Some(rettyp.clone());
-                    Ok(rettyp.clone())
+                    Ok(rettyp)
                 }
                 t => Err(Error::TypeError(
                     *sloc,
@@ -353,8 +364,21 @@ impl Node {
             } => {
                 for (name, argtyp, rawargtyp) in args.iter_mut() {
                     let t = rawargtyp.typecheck_type(env, None, *sloc, "lambda (argument)")?;
-                    *argtyp = Some(t.clone());
-                    env.push(name, Value::Pseudo(t));
+                    match t.as_ref() {
+                        Type::Type(None, None) => {
+                            let tp = TypeParam {
+                                name: name.clone(),
+                                id: sloc.hash(),
+                            };
+                            let gent = Rc::new(Type::Generic(tp.clone()));
+                            *argtyp = Some(Rc::new(Type::Type(Some(tp), None)));
+                            env.push(name, Value::Pseudo(gent));
+                        }
+                        _ => {
+                            *argtyp = Some(t.clone());
+                            env.push(name, Value::Pseudo(t));
+                        }
+                    };
                 }
 
                 let rettyp = body.borrow_mut().typecheck(env, None)?;
@@ -377,6 +401,16 @@ impl Node {
             } => {
                 for (name, argtyp, rawargtyp) in argtypes.iter_mut() {
                     let t = rawargtyp.typecheck_type(env, None, *sloc, "forall (argument)")?;
+                    if t.as_ref() == &Type::Type(None, None) {
+                        let tp = TypeParam {
+                            name: name.clone(),
+                            id: sloc.hash(),
+                        };
+                        let gent = Rc::new(Type::Generic(tp.clone()));
+                        *argtyp = Some(Rc::new(Type::Type(Some(tp), None)));
+                        env.push(name, Value::Pseudo(gent));
+                        continue;
+                    }
                     *argtyp = Some(t.clone());
                     env.push(name, Value::Pseudo(t));
                 }
@@ -392,7 +426,7 @@ impl Node {
                         .collect(),
                     rettyp,
                 ));
-                let t = Rc::new(Type::Type(Some(t)));
+                let t = Rc::new(Type::Type(None, Some(t)));
                 *typ = Some(t.clone());
                 Ok(t)
             }
@@ -408,8 +442,9 @@ impl Node {
     ) -> Result<Rc<Type>, Error> {
         let t = self.typecheck(env, hint)?;
         match t.as_ref() {
-            Type::Type(Some(t)) => Ok(t.clone()),
-            Type::Type(None) => Ok(t.clone()),
+            Type::Type(None, Some(t)) => Ok(t.clone()),
+            Type::Type(_, None) => Ok(t.clone()),
+            Type::Generic(_) => Ok(t),
             _ => Err(Error::TypeError(
                 sloc,
                 format!(
@@ -682,7 +717,17 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr1(&mut self) -> Result<Box<Node>, Error> {
-        self.parse_binop(0)
+        let expr = self.parse_binop(0)?;
+        if self.consume_if(Tok::Colon) {
+            let typhint = self.parse_expr0()?;
+            return Ok(Box::new(Node::TypeAnno {
+                sloc: self.consumed_sloc,
+                typ: None,
+                op0: expr,
+                rawtyp: typhint,
+            }));
+        }
+        Ok(expr)
     }
 
     fn parse_expr0(&mut self) -> Result<Box<Node>, Error> {
@@ -711,17 +756,6 @@ impl<'a> Parser<'a> {
                     typ: None,
                     callable: expr,
                     args,
-                });
-                continue;
-            }
-
-            if self.consume_if(Tok::Colon) {
-                let typhint = self.parse_final()?;
-                expr = Box::new(Node::TypeAnno {
-                    sloc: self.consumed_sloc,
-                    typ: None,
-                    op0: expr,
-                    rawtyp: typhint,
                 });
                 continue;
             }
