@@ -95,6 +95,22 @@ pub enum Node {
         argtypes: Vec<(Rc<str>, Option<Rc<Type>>, Box<Node>)>,
         rettyp: Rc<RefCell<Node>>,
     },
+    Record {
+        sloc: SLoc,
+        typ: Option<Rc<Type>>,
+        fields: Vec<(Rc<str>, Node)>,
+    },
+    RecordType {
+        sloc: SLoc,
+        typ: Option<Rc<Type>>,
+        fields: Vec<(Rc<str>, Node)>,
+    },
+    AccessField {
+        sloc: SLoc,
+        typ: Option<Rc<Type>>,
+        op0: Box<Node>,
+        field: Rc<str>,
+    },
 }
 
 impl Node {
@@ -113,6 +129,9 @@ impl Node {
             Node::LetIn { typ, .. } => typ,
             Node::Lambda { typ, .. } => typ,
             Node::Forall { typ, .. } => typ,
+            Node::Record { typ, .. } => typ,
+            Node::RecordType { typ, .. } => typ,
+            Node::AccessField { typ, .. } => typ,
         };
         typ.clone()
     }
@@ -132,6 +151,9 @@ impl Node {
             Node::LetIn { typ, .. } => *typ = Some(t),
             Node::Lambda { typ, .. } => *typ = Some(t),
             Node::Forall { typ, .. } => *typ = Some(t),
+            Node::Record { typ, .. } => *typ = Some(t),
+            Node::RecordType { typ, .. } => *typ = Some(t),
+            Node::AccessField { typ, .. } => *typ = Some(t),
         };
     }
 
@@ -340,12 +362,13 @@ impl Node {
                 env.push(name, Value::Pseudo(valtyphint.clone()));
                 let valtyp = value.typecheck(env, Some(valtyphint.clone()))?;
                 if valtyphint.as_ref() != valtyp.as_ref() {
+                    println!("{:?}", env.locals);
                     return Err(Error::TypeError(
                         *sloc,
                         format!(
-                            "computed type: {}, expected: {}",
-                            valtyp.as_ref(),
-                            valtyphint.as_ref()
+                            "computed type: {}, expected: {} ({:?}, {:?})",
+                            valtyp.as_ref(), valtyphint.as_ref(),
+                            valtyp.as_ref(), valtyphint.as_ref()
                         ),
                     ));
                 }
@@ -430,6 +453,54 @@ impl Node {
                 *typ = Some(t.clone());
                 Ok(t)
             }
+            Node::Record { typ: Some(t), .. } => Ok(t.clone()),
+            Node::Record { typ, fields, .. } => {
+                let fields: Result<Vec<_>, _> = fields
+                    .iter_mut()
+                    .map(|(name, val)| val.typecheck(env, None).map(|t| (name.clone(), t)))
+                    .collect();
+                let t = Rc::new(Type::Record(fields?));
+                *typ = Some(t.clone());
+                Ok(t)
+            }
+            Node::RecordType { typ: Some(t), .. } => Ok(t.clone()),
+            Node::RecordType {
+                sloc, typ, fields, ..
+            } => {
+                let fields: Result<Vec<_>, _> = fields
+                    .iter_mut()
+                    .map(|(name, rawtyp)| {
+                        rawtyp
+                            .typecheck_type(env, None, *sloc, "record type literal")
+                            .map(|t| (name.clone(), t))
+                    })
+                    .collect();
+                let t = Rc::new(Type::Type(None, Some(Rc::new(Type::Record(fields?)))));
+                *typ = Some(t.clone());
+                Ok(t)
+            }
+            Node::AccessField { typ: Some(t), .. } => Ok(t.clone()),
+            Node::AccessField {
+                sloc,
+                typ,
+                op0,
+                field,
+            } => match op0.typecheck(env, None)?.as_ref() {
+                Type::Record(fields) => match fields
+                    .iter()
+                    .find(|(name, _)| name.as_ref() == field.as_ref())
+                {
+                    Some((_, t)) => {
+                        *typ = Some(t.clone());
+                        Ok(t.clone())
+                    }
+                    None => Err(Error::TypeError(
+                        *sloc,
+                        format!("record does not have field {:?}: {}", field.as_ref(), op0),
+                    )),
+                },
+                _ => Err(Error::TypeError(*sloc, format!("not a record: {}", op0))),
+            },
         }
     }
 
@@ -523,7 +594,7 @@ impl std::fmt::Display for Node {
                 body.as_ref()
             ),
             Node::Lambda { args, body, .. } => {
-                write!(f, "λ(")?;
+                write!(f, "λ(")?; // TODO: Simplify print code like for records!
                 for (i, (name, typ, rawtyp)) in args.iter().enumerate() {
                     if i != 0 {
                         write!(f, ", ")?;
@@ -539,7 +610,7 @@ impl std::fmt::Display for Node {
             Node::Forall {
                 argtypes, rettyp, ..
             } => {
-                write!(f, "∀(")?;
+                write!(f, "∀(")?; // TODO: Simplify print code like for records!
                 for (i, (name, typ, rawtyp)) in argtypes.iter().enumerate() {
                     if i != 0 {
                         write!(f, ", ")?;
@@ -551,6 +622,25 @@ impl std::fmt::Display for Node {
                     }
                 }
                 write!(f, ") -> {}", rettyp.borrow())
+            }
+            Node::Record { fields, .. } if fields.is_empty() => write!(f, "{{=}}"),
+            Node::Record { fields, .. } => {
+                write!(f, "{{ {} = {}", fields[0].0.as_ref(), fields[0].1)?;
+                for (name, value) in &fields[1..] {
+                    write!(f, ", {} = {}", name.as_ref(), value)?;
+                }
+                write!(f, " }}")
+            }
+            Node::RecordType { fields, .. } if fields.is_empty() => write!(f, "{{:}}"),
+            Node::RecordType { fields, .. } => {
+                write!(f, "{{ {}: {}", fields[0].0.as_ref(), fields[0].1)?;
+                for (name, value) in &fields[1..] {
+                    write!(f, ", {}: {}", name.as_ref(), value)?;
+                }
+                write!(f, " }}")
+            }
+            Node::AccessField { op0, field, .. } => {
+                write!(f, "({}).{}", op0.as_ref(), field.as_ref())
             }
         }
     }
@@ -760,6 +850,16 @@ impl<'a> Parser<'a> {
                 continue;
             }
 
+            if self.consume_if(Tok::Dot) {
+                let (sloc, name) = self.expect_id()?;
+                expr = Box::new(Node::AccessField {
+                    sloc,
+                    typ: None,
+                    op0: expr,
+                    field: name,
+                });
+            }
+
             break;
         }
         Ok(expr)
@@ -797,6 +897,33 @@ impl<'a> Parser<'a> {
                 let expr = self.parse()?;
                 self.expect_token(Tok::RParen)?;
                 return Ok(expr);
+            }
+            Tok::LBrace => {
+                if self.consume_if(Tok::Colon) {
+                    self.expect_token(Tok::RBrace)?;
+                    return Ok(Box::new(Node::RecordType {
+                        sloc,
+                        typ: None,
+                        fields: vec![],
+                    }));
+                }
+
+                if self.consume_if(Tok::Assign) {
+                    self.expect_token(Tok::RBrace)?;
+                    return Ok(Box::new(Node::Record {
+                        sloc,
+                        typ: None,
+                        fields: vec![],
+                    }));
+                }
+
+                let (_, id) = self.expect_id()?;
+                if self.consume_if(Tok::Colon) {
+                    return self.parse_record_type(sloc, id);
+                }
+
+                self.expect_token(Tok::Assign)?;
+                return self.parse_record(sloc, id);
             }
             Tok::Lambda => {
                 self.expect_token(Tok::LParen)?;
@@ -845,6 +972,48 @@ impl<'a> Parser<'a> {
                 }
             }
             _ => unimplemented!(),
+        }))
+    }
+
+    fn parse_record(&mut self, sloc: SLoc, id0: Rc<str>) -> Result<Box<Node>, Error> {
+        let val0 = self.parse()?;
+        let mut fields = vec![(id0, *val0)];
+        loop {
+            if self.consume_if(Tok::RBrace) {
+                break;
+            }
+
+            self.expect_token(Tok::Comma)?;
+            let (_, id) = self.expect_id()?;
+            self.expect_token(Tok::Assign)?;
+            let val = self.parse()?;
+            fields.push((id, *val));
+        }
+        Ok(Box::new(Node::Record {
+            sloc,
+            typ: None,
+            fields,
+        }))
+    }
+
+    fn parse_record_type(&mut self, sloc: SLoc, id0: Rc<str>) -> Result<Box<Node>, Error> {
+        let typ0 = self.parse()?;
+        let mut fields = vec![(id0, *typ0)];
+        loop {
+            if self.consume_if(Tok::RBrace) {
+                break;
+            }
+
+            self.expect_token(Tok::Comma)?;
+            let (_, id) = self.expect_id()?;
+            self.expect_token(Tok::Colon)?;
+            let typ = self.parse()?;
+            fields.push((id, *typ));
+        }
+        Ok(Box::new(Node::RecordType {
+            sloc,
+            typ: None,
+            fields,
         }))
     }
 }

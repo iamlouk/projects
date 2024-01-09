@@ -39,6 +39,7 @@ fn main() {
         }
     };
     println!("# TYP: {}", typ);
+    println!("# TYP: {:?}", typ);
 
     match env.eval(node.as_ref()) {
         Ok(val) => println!("{}", val),

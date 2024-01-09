@@ -40,6 +40,7 @@ pub enum Tok {
     Colon,
     Comma,
     Tilde,
+    Dot,
 
     Plus,
     Minus,
@@ -252,6 +253,7 @@ impl<'a> std::iter::Iterator for Lexer<'a> {
             '&' => Ok((self.sloc, Tok::Ampersand)),
             '|' => Ok((self.sloc, Tok::Pipe)),
             '~' => Ok((self.sloc, Tok::Tilde)),
+            '.' => Ok((self.sloc, Tok::Dot)),
             '-' => match self.chars.peek() {
                 Some('>') => {
                     self.next_char();

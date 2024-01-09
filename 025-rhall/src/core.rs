@@ -50,9 +50,11 @@ pub enum Type {
     Boolean,
     Integer,
     String,
+    Any,
     Type(Option<TypeParam>, Option<Rc<Type>>),
     Lambda(Vec<(Rc<str>, Rc<Type>)>, Rc<Type>),
     Option(Rc<Type>),
+    Record(Vec<(Rc<str>, Rc<Type>)>),
 }
 
 impl Display for Type {
@@ -62,6 +64,7 @@ impl Display for Type {
             Type::Boolean => write!(f, "Bool"),
             Type::Integer => write!(f, "Int"),
             Type::String => write!(f, "Str"),
+            Type::Any => write!(f, "Any"),
             Type::Type(_, None) => write!(f, "Type"),
             Type::Type(_, Some(t)) => write!(f, "{}", t.as_ref()),
             Type::Lambda(args, rettyp) => {
@@ -78,6 +81,14 @@ impl Display for Type {
                 write!(f, ") -> {}", rettyp)
             }
             Type::Option(t) => write!(f, "Option({})", t.as_ref()),
+            Type::Record(fields) if fields.is_empty() => write!(f, "{{:}}"),
+            Type::Record(fields) => {
+                write!(f, "{{ {}: {}", fields[0].0.as_ref(), fields[0].1.as_ref())?;
+                for (name, typ) in fields[1..].iter() {
+                    write!(f, ", {}: {}", name.as_ref(), typ.as_ref())?;
+                }
+                write!(f, " }}")
+            }
         }
     }
 }
@@ -104,6 +115,14 @@ impl PartialEq for Type {
                     && rettyp1.as_ref() == rettyp2.as_ref()
             }
             (Type::Option(t1), Type::Option(t2)) => t1 == t2,
+            (Type::Record(fields1), Type::Record(fields2)) if fields1.len() == fields2.len() => {
+                fields1
+                    .iter()
+                    .zip(fields2.iter())
+                    .all(|((n1, t1), (n2, t2))| {
+                        n1.as_ref() == n2.as_ref() && t1.as_ref() == t2.as_ref()
+                    })
+            }
             (_, _) => false,
         }
     }
@@ -117,6 +136,7 @@ impl Type {
             Type::Boolean => self.clone(),
             Type::Integer => self.clone(),
             Type::String => self.clone(),
+            Type::Any => self.clone(),
             // Stop substitution because name is shadowed:
             Type::Type(Some(tp2), None) if tp.name.as_ref() == tp2.name.as_ref() => self.clone(),
             Type::Type(None, Some(t)) => Rc::new(Type::Type(None, Some(t.subst(tp, subst)))),
@@ -129,6 +149,12 @@ impl Type {
                 rettyp.subst(tp, subst),
             )),
             Type::Option(t) => Rc::new(Type::Option(t.subst(tp, subst))),
+            Type::Record(fields) => Rc::new(Type::Record(
+                fields
+                    .iter()
+                    .map(|(name, t)| (name.clone(), t.subst(tp, subst)))
+                    .collect(),
+            )),
         }
     }
 
@@ -150,6 +176,7 @@ pub enum Value {
     Lambda(Vec<(Rc<str>, Rc<Type>)>, Rc<RefCell<Node>>),
     Builtin(Rc<Builtin>),
     Option(Rc<Type>, Option<Box<Value>>),
+    Record(Vec<(Rc<str>, Value)>),
 }
 
 pub struct Builtin {
@@ -183,6 +210,12 @@ impl Value {
             )),
             Value::Builtin(b) => Rc::new(Type::Lambda(b.argtypes.clone(), b.rettyp.clone())),
             Value::Option(t, _) => t.clone(),
+            Value::Record(fields) => Rc::new(Type::Record(
+                fields
+                    .iter()
+                    .map(|(name, val)| (name.clone(), val.get_type(env)))
+                    .collect(),
+            )),
         }
     }
 
@@ -234,6 +267,14 @@ impl Display for Value {
             Value::Builtin(b) => write!(f, "{}", b.name),
             Value::Option(_, Some(val)) => write!(f, "Some({})", val),
             Value::Option(t, None) => write!(f, "None({})", t.as_ref()),
+            Value::Record(fields) if fields.is_empty() => write!(f, "{{=}}"),
+            Value::Record(fields) => {
+                write!(f, "{{ {} = {}", fields[0].0.as_ref(), fields[0].1)?;
+                for (name, val) in fields[1..].iter() {
+                    write!(f, ", {} = {}", name.as_ref(), val)?;
+                }
+                write!(f, " }}")
+            }
         }
     }
 }
