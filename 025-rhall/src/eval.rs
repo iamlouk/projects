@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     ast::{BinOp, Node},
-    core::{Builtin, Error, SLoc, Type, TypeParam, Value},
+    core::{Builtin, Error, Type, Value},
 };
 
 #[derive(Debug)]
@@ -33,7 +33,7 @@ impl Env {
             int_type: Rc::new(Type::Integer),
             bool_type: Rc::new(Type::Boolean),
             str_type: Rc::new(Type::String),
-            type_type: Rc::new(Type::Type(None, None)),
+            type_type: Rc::new(Type::TypeOfType),
             any_type: Rc::new(Type::Any),
         };
         env.globals.insert("Int", Value::Type(env.int_type.clone()));
@@ -193,10 +193,7 @@ impl Env {
 }
 
 pub fn add_builtins(env: &mut Env) {
-    let t1_str: Rc<str> = Rc::from("A");
-    let t2_str: Rc<str> = Rc::from("B");
     let x_str: Rc<str> = Rc::from("x");
-    let f_str: Rc<str> = Rc::from("x");
 
     env.add_global(
         "Process/exit",
@@ -235,149 +232,6 @@ pub fn add_builtins(env: &mut Env) {
         })),
     );
 
-    let t1tp = TypeParam {
-        name: t1_str.clone(),
-        id: line!() as u64,
-    };
-    let t1 = Rc::new(Type::Generic(t1tp.clone()));
-    env.add_global(
-        "Option",
-        Value::Builtin(Rc::new(Builtin {
-            name: "Option",
-            argtypes: vec![(t1_str.clone(), Rc::new(Type::Type(Some(t1tp), None)))],
-            rettyp: Rc::new(Type::Type(None, Some(Rc::new(Type::Option(t1))))),
-            f: Box::new(|_env, args| {
-                let t = args[0].expect_type();
-                Ok(Value::Type(Rc::new(Type::Option(t))))
-            }),
-        })),
-    );
-
-    let t1tp = TypeParam {
-        name: t1_str.clone(),
-        id: line!() as u64,
-    };
-    let t1 = Rc::new(Type::Generic(t1tp.clone()));
-    env.add_global(
-        "None",
-        Value::Builtin(Rc::new(Builtin {
-            name: "Some",
-            argtypes: vec![(t1_str.clone(), Rc::new(Type::Type(Some(t1tp), None)))],
-            rettyp: Rc::new(Type::Option(t1)),
-            f: Box::new(|_env, args| {
-                let t = args[0].expect_type();
-                Ok(Value::Option(t, None))
-            }),
-        })),
-    );
-
-    {
-        let x_str = x_str.clone();
-        let t1tp = TypeParam {
-            name: t1_str.clone(),
-            id: line!() as u64,
-        };
-        let t1 = Rc::new(Type::Generic(t1tp.clone()));
-        env.add_global(
-            "Some",
-            Value::Builtin(Rc::new(Builtin {
-                name: "Some",
-                argtypes: vec![(t1_str.clone(), Rc::new(Type::Type(Some(t1tp), None)))],
-                rettyp: Rc::new(Type::Lambda(
-                    vec![(x_str.clone(), t1.clone())],
-                    Rc::new(Type::Option(t1.clone())),
-                )),
-                f: Box::new(move |_env, args| {
-                    let t = args[0].expect_type();
-                    Ok(Value::Builtin(Rc::new(Builtin {
-                        name: "Some(A)",
-                        argtypes: vec![(x_str.clone(), t1.clone())],
-                        rettyp: Rc::new(Type::Option(t.clone())),
-                        f: Box::new(move |_env, args| {
-                            Ok(Value::Option(t.clone(), Some(Box::new(args[0].clone()))))
-                        }),
-                    })))
-                }),
-            })),
-        );
-    }
-
-    {
-        // Option/fold: ∀(A: Type, B: Type) -> ∀(o: Option(A)) -> ∀(f: ∀(a: A) -> B, b: B) -> B
-        let t1tp = TypeParam {
-            name: t1_str.clone(),
-            id: line!() as u64,
-        };
-        let t2tp = TypeParam {
-            name: t2_str.clone(),
-            id: line!() as u64,
-        };
-        let t1 = Rc::new(Type::Generic(t1tp.clone()));
-        let t2 = Rc::new(Type::Generic(t2tp.clone()));
-
-        let mapftyp = Rc::new(Type::Lambda(vec![(x_str.clone(), t1.clone())], t2.clone()));
-        let ftyp = Rc::new(Type::Lambda(
-            vec![(x_str.clone(), Rc::new(Type::Option(t1)))],
-            Rc::new(Type::Lambda(
-                vec![(f_str.clone(), mapftyp), (x_str.clone(), t2.clone())],
-                t2,
-            )),
-        ));
-
-        env.add_global(
-            "Option/fold",
-            Value::Builtin(Rc::new(Builtin {
-                name: "Option/fold",
-                argtypes: vec![
-                    (
-                        t1_str.clone(),
-                        Rc::new(Type::Type(Some(t1tp.clone()), None)),
-                    ),
-                    (
-                        t2_str.clone(),
-                        Rc::new(Type::Type(Some(t2tp.clone()), None)),
-                    ),
-                ],
-                rettyp: ftyp.clone(),
-                f: Box::new(move |_env, args| {
-                    let t1 = args[0].expect_type();
-                    let t2 = args[1].expect_type();
-                    let (args, ftyp) = ftyp.subst(&t1tp, &t1).subst(&t2tp, &t2).decompose_lambda();
-                    Ok(Value::Builtin(Rc::new(Builtin {
-                        name: "Option/fold(A, B)",
-                        argtypes: args,
-                        rettyp: ftyp.clone(),
-                        f: Box::new(move |_env, args| {
-                            let opt = match &args[0] {
-                                Value::Option(_, x) => x.clone(),
-                                _ => panic!(),
-                            };
-                            let (args, ftyp) = ftyp.decompose_lambda();
-                            Ok(Value::Builtin(Rc::new(Builtin {
-                                name: "Option/fold(A, B)(Option(A))",
-                                argtypes: args,
-                                rettyp: ftyp,
-                                f: Box::new(move |env, args| {
-                                    let mapf = &args[0];
-                                    let fallback = &args[1];
-                                    match &opt {
-                                        Some(x) => {
-                                            mapf.apply(SLoc::default(), env, vec![(**x).clone()])
-                                        }
-                                        None => Ok(fallback.clone()),
-                                    }
-                                }),
-                            })))
-                        }),
-                    })))
-                }),
-            })),
-        );
-    }
-
-    drop(t1_str);
-    drop(t2_str);
-    drop(f_str);
     drop(x_str);
 }
 

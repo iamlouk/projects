@@ -14,6 +14,7 @@ pub struct SLoc {
 }
 
 impl SLoc {
+    #[allow(unused)]
     pub fn hash(&self) -> u64 {
         (self.line as u64) << 32 | (self.col as u64) << 8 | self.file_id as u64
     }
@@ -35,23 +36,18 @@ pub enum Error {
     TypeError(SLoc, String),
 }
 
-#[derive(Debug, Clone)]
-pub struct TypeParam {
-    pub name: Rc<str>,
-    pub id: u64,
-}
-
 // TODO: Do something string_pool like for types?
 // As types will basically never change but be shared/cross-reference a lot
-// that would be nice and beneficial.
+// that would be nice and beneficial. Also, tagged-union/enum types!
 #[derive(Debug, Clone)]
 pub enum Type {
-    Generic(TypeParam),
+    Placeholder(Rc<str>),
     Boolean,
     Integer,
     String,
     Any,
-    Type(Option<TypeParam>, Option<Rc<Type>>),
+    TypeOfType,
+    TypeOf(Rc<Type>),
     Lambda(Vec<(Rc<str>, Rc<Type>)>, Rc<Type>),
     Option(Rc<Type>),
     Record(Vec<(Rc<str>, Rc<Type>)>),
@@ -60,13 +56,13 @@ pub enum Type {
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Type::Generic(TypeParam { name, id: _ }) => write!(f, "{}", name.as_ref()),
+            Type::Placeholder(name) => write!(f, "{}", name.as_ref()),
             Type::Boolean => write!(f, "Bool"),
             Type::Integer => write!(f, "Int"),
             Type::String => write!(f, "Str"),
             Type::Any => write!(f, "Any"),
-            Type::Type(_, None) => write!(f, "Type"),
-            Type::Type(_, Some(t)) => write!(f, "{}", t.as_ref()),
+            Type::TypeOfType => write!(f, "Type"),
+            Type::TypeOf(t) => write!(f, "typeof({})", t.as_ref()),
             Type::Lambda(args, rettyp) => {
                 write!(f, "∀(")?;
                 for (i, (name, argtyp)) in args.iter().enumerate() {
@@ -78,7 +74,7 @@ impl Display for Type {
                         argtyp
                     )?;
                 }
-                write!(f, ") -> {}", rettyp)
+                write!(f, ") -> ({})", rettyp)
             }
             Type::Option(t) => write!(f, "Option({})", t.as_ref()),
             Type::Record(fields) if fields.is_empty() => write!(f, "{{:}}"),
@@ -100,12 +96,12 @@ impl PartialEq for Type {
             // parameters have the same name in different scopes. Comparing the ids for equality
             // is not ok, one would need to check that every position a ID is used in the lhs,
             // a different but equal in all positions ID is used in the rhs.
-            (Type::Generic(tp1), Type::Generic(tp2)) => tp1.name.as_ref() == tp2.name.as_ref(),
+            (Type::Placeholder(tp1), Type::Placeholder(tp2)) => tp1.as_ref() == tp2.as_ref(),
             (Type::Boolean, Type::Boolean) => true,
             (Type::Integer, Type::Integer) => true,
             (Type::String, Type::String) => true,
-            (Type::Type(_, Some(t1)), Type::Type(_, Some(t2))) => t1 == t2,
-            (Type::Type(_, None), Type::Type(_, None)) => true, // TODO: Check stuff like: 1 -> Int -> Type -> Kind...
+            (Type::TypeOfType, Type::TypeOfType) => true,
+            (Type::TypeOf(t1), Type::TypeOf(t2)) => t1.as_ref() == t2.as_ref(),
             (Type::Lambda(args1, rettyp1), Type::Lambda(args2, rettyp2)) => {
                 args1.len() == args2.len()
                     && args1
@@ -129,35 +125,55 @@ impl PartialEq for Type {
 }
 
 impl Type {
-    pub fn subst(self: &Rc<Self>, tp: &TypeParam, subst: &Rc<Type>) -> Rc<Self> {
+    pub fn subst(self: &Rc<Self>, name: &str, subst: &Rc<Type>) -> Rc<Self> {
+        // TODO: Lazy substitution would be nice, if a inner subst call returns self, don't add a
+        // new allocation? Clone self instead?
         match self.as_ref() {
-            Type::Generic(tp2) if tp.name.as_ref() == tp2.name.as_ref() => subst.clone(),
-            Type::Generic(_) => self.clone(),
+            Type::Placeholder(placeholder) if placeholder.as_ref() == name => subst.clone(),
+            Type::Placeholder(_) => self.clone(),
             Type::Boolean => self.clone(),
             Type::Integer => self.clone(),
             Type::String => self.clone(),
             Type::Any => self.clone(),
-            // Stop substitution because name is shadowed:
-            Type::Type(Some(tp2), None) if tp.name.as_ref() == tp2.name.as_ref() => self.clone(),
-            Type::Type(None, Some(t)) => Rc::new(Type::Type(None, Some(t.subst(tp, subst)))),
-            Type::Type(_, None) => self.clone(),
-            Type::Type(Some(_), Some(_)) => panic!(),
-            Type::Lambda(args, rettyp) => Rc::new(Type::Lambda(
-                args.iter()
-                    .map(|(name, t)| (name.clone(), t.subst(tp, subst)))
-                    .collect(),
-                rettyp.subst(tp, subst),
-            )),
-            Type::Option(t) => Rc::new(Type::Option(t.subst(tp, subst))),
+            Type::TypeOfType => self.clone(),
+            Type::TypeOf(t) => Rc::new(Type::TypeOf(t.subst(name, subst))),
+            Type::Lambda(args, rettyp) => {
+                let mut dosubst = true;
+                let mut nargs = Vec::with_capacity(args.len());
+                for (argname, argt) in args {
+                    if argname.as_ref() == name {
+                        dosubst = false;
+                    }
+                    nargs.push((
+                        argname.clone(),
+                        if dosubst {
+                            argt.subst(name, subst)
+                        } else {
+                            argt.clone()
+                        },
+                    ));
+                }
+
+                Rc::new(Type::Lambda(
+                    nargs,
+                    if dosubst {
+                        rettyp.subst(name, subst)
+                    } else {
+                        rettyp.clone()
+                    },
+                ))
+            }
+            Type::Option(t) => Rc::new(Type::Option(t.subst(name, subst))),
             Type::Record(fields) => Rc::new(Type::Record(
                 fields
                     .iter()
-                    .map(|(name, t)| (name.clone(), t.subst(tp, subst)))
+                    .map(|(name, t)| (name.clone(), t.subst(name, subst)))
                     .collect(),
             )),
         }
     }
 
+    #[allow(unused)]
     pub fn decompose_lambda(self: &Rc<Self>) -> (Vec<(Rc<str>, Rc<Type>)>, Rc<Self>) {
         match self.as_ref() {
             Type::Lambda(argtypes, rettyp) => (argtypes.clone(), rettyp.clone()),
@@ -203,7 +219,13 @@ impl Value {
             Value::Bool(_) => env.bool_type.clone(),
             Value::Int(_) => env.int_type.clone(),
             Value::Str(_) => env.str_type.clone(),
-            Value::Type(t) => Rc::new(Type::Type(None, Some(t.clone()))),
+            Value::Type(t) => {
+                if **t == Type::TypeOfType {
+                    env.type_type.clone()
+                } else {
+                    Rc::new(Type::TypeOf(t.clone()))
+                }
+            }
             Value::Lambda(args, body) => Rc::new(Type::Lambda(
                 args.clone(),
                 body.borrow().get_type().unwrap(),
@@ -216,13 +238,6 @@ impl Value {
                     .map(|(name, val)| (name.clone(), val.get_type(env)))
                     .collect(),
             )),
-        }
-    }
-
-    pub fn expect_type(&self) -> Rc<Type> {
-        match self {
-            Value::Type(t) => t.clone(),
-            _ => panic!(),
         }
     }
 
@@ -247,7 +262,7 @@ impl Value {
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::Pseudo(t) => write!(f, "(PSEUDO:{})", t.as_ref()),
+            Value::Pseudo(t) => write!(f, "<Something of Type {}>", t.as_ref()),
             Value::Bool(true) => write!(f, "true"),
             Value::Bool(false) => write!(f, "false"),
             Value::Int(x) => write!(f, "{}", x),
@@ -262,7 +277,7 @@ impl Display for Value {
                         write!(f, "{}: {}", name.as_ref(), typ)?;
                     }
                 }
-                write!(f, ") -> {}", node.as_ref().borrow())
+                write!(f, ") -> ({})", node.as_ref().borrow())
             }
             Value::Builtin(b) => write!(f, "{}", b.name),
             Value::Option(_, Some(val)) => write!(f, "Some({})", val),
