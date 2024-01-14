@@ -39,7 +39,6 @@ fn main() {
         }
     };
     println!("# TYP: {}", typ);
-    println!("# TYP: {:?}", typ);
 
     match env.eval(node.as_ref()) {
         Ok(val) => println!("{}", val),
@@ -71,19 +70,20 @@ mod test {
             let name = name.strip_suffix(".expected").unwrap();
             path.push(name.to_string() + ".dhall");
             let sourcecode = std::fs::read_to_string(&path).unwrap();
-            eprintln!("running example: {}", name);
+            eprintln!("testing: {}", name);
 
             let mut lexer = Lexer::new(sourcecode.as_str(), 0, &mut env.string_pool);
             let mut parser = Parser::new(&mut lexer);
             let mut example = parser.parse_all().expect("parsing failed");
 
-            example
+            let typ = example
                 .typecheck(&mut env, None)
                 .expect("type check failed");
+            let val = env.eval(&example).expect("evaluation failed");
 
-            let res = format!("{}", env.eval(&example).expect("evaluation failed"));
+            let res = format!("{}", val);
             assert_eq!(expected.trim(), res.trim());
-
+            assert_eq!(typ.as_ref(), val.get_type(&env).as_ref());
             path.pop();
         }
     }

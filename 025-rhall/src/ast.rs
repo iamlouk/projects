@@ -111,6 +111,13 @@ pub enum Node {
         op0: Box<Node>,
         field: Rc<str>,
     },
+    As {
+        sloc: SLoc,
+        typ: Option<Rc<Type>>,
+        op0: Box<Node>,
+        as_raw: Box<Node>,
+        as_typ: Option<Rc<Type>>,
+    },
 }
 
 impl Node {
@@ -132,6 +139,7 @@ impl Node {
             Node::Record { typ, .. } => typ,
             Node::RecordType { typ, .. } => typ,
             Node::AccessField { typ, .. } => typ,
+            Node::As { typ, .. } => typ,
         };
         typ.clone()
     }
@@ -154,6 +162,7 @@ impl Node {
             Node::Record { typ, .. } => *typ = Some(t),
             Node::RecordType { typ, .. } => *typ = Some(t),
             Node::AccessField { typ, .. } => *typ = Some(t),
+            Node::As { typ, .. } => *typ = Some(t),
         };
     }
 
@@ -428,16 +437,14 @@ impl Node {
                 for (arg, (arg_name, arg_type)) in args.iter_mut().zip(arg_types) {
                     let typ = arg.typecheck(env, None)?;
                     if **arg_type == Type::TypeOfType {
-                        if **arg_type == Type::TypeOfType {
-                            ret_type = ret_type.subst(
-                                arg_name.as_ref(),
-                                match typ.as_ref() {
-                                    Type::TypeOf(t) => t,
-                                    _ => panic!(),
-                                },
-                            );
-                            continue;
-                        }
+                        ret_type = ret_type.subst(
+                            arg_name.as_ref(),
+                            match typ.as_ref() {
+                                Type::TypeOf(t) => t,
+                                _ => panic!(),
+                            },
+                        );
+                        continue;
                     }
                     if **arg_type != *typ {
                         return Err(Error::Uncallable(
@@ -564,6 +571,42 @@ impl Node {
                 },
                 _ => Err(Error::TypeError(*sloc, format!("not a record: {}", op0))),
             },
+            Node::As { typ: Some(t), .. } => Ok(t.clone()),
+            Node::As {
+                sloc,
+                typ,
+                op0,
+                as_typ,
+                as_raw,
+            } => {
+                let t = as_raw.typecheck(env, None)?;
+                let t = match t.as_ref() {
+                    Type::TypeOf(t) => t,
+                    other => {
+                        return Err(Error::TypeError(
+                            *sloc,
+                            format!(
+                                "expected a type on the right-hand-side of 'as', not: {}",
+                                other
+                            ),
+                        ))
+                    }
+                };
+                *as_typ = Some(t.clone());
+                let op0type = op0.typecheck(env, None)?;
+                match (op0type.as_ref(), t.as_ref()) {
+                    (_, Type::Any) => {
+                        *typ = Some(t.clone());
+                        Ok(t.clone())
+                    }
+                    (Type::Any, _) => {
+                        let t = Rc::new(Type::Option(t.clone()));
+                        *typ = Some(t.clone());
+                        Ok(t)
+                    }
+                    (a, b) => todo!("{} as {}", a, b),
+                }
+            }
         }
     }
 }
@@ -681,6 +724,7 @@ impl std::fmt::Display for Node {
             Node::AccessField { op0, field, .. } => {
                 write!(f, "({}).{}", op0.as_ref(), field.as_ref())
             }
+            Node::As { op0, as_raw, .. } => write!(f, "({} as {})", op0, as_raw),
         }
     }
 }
@@ -846,15 +890,25 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr1(&mut self) -> Result<Box<Node>, Error> {
-        let expr = self.parse_binop(0)?;
+        let mut expr = self.parse_binop(0)?;
         if self.consume_if(Tok::Colon) {
             let typhint = self.parse_expr0()?;
-            return Ok(Box::new(Node::TypeAnno {
+            expr = Box::new(Node::TypeAnno {
                 sloc: self.consumed_sloc,
                 typ: None,
                 op0: expr,
                 rawtyp: typhint,
-            }));
+            });
+        }
+        if self.consume_if(Tok::As) {
+            let typ = self.parse_expr0()?;
+            expr = Box::new(Node::As {
+                sloc: self.consumed_sloc,
+                typ: None,
+                op0: expr,
+                as_raw: typ,
+                as_typ: None,
+            });
         }
         Ok(expr)
     }
