@@ -12,7 +12,7 @@ pub struct Runtime {
     pub locals: Vec<(Rc<str>, Value)>, // <- only to use during type-check!
     pub int_type: Rc<Type>,
     pub bool_type: Rc<Type>,
-    pub str_type: Rc<Type>,
+    pub text_type: Rc<Type>,
     pub type_type: Rc<Type>,
     pub any_type: Rc<Type>,
 }
@@ -25,7 +25,7 @@ impl Runtime {
             locals: Vec::new(),
             int_type: Rc::new(Type::Int),
             bool_type: Rc::new(Type::Bool),
-            str_type: Rc::new(Type::Str),
+            text_type: Rc::new(Type::Text),
             type_type: Rc::new(Type::TypeOfType),
             any_type: Rc::new(Type::Any),
         };
@@ -116,6 +116,20 @@ impl Scope {
     }
 }
 
+impl std::fmt::Display for Scope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Scope {{")?;
+        writeln!(f, "\t{}: {},", self.local.0.as_ref(), &self.local.1)?;
+        let mut up = &self.up;
+        while let Some(scope) = up {
+            writeln!(f, "\t{}: {},", scope.local.0.as_ref(), &scope.local.1)?;
+            up = &scope.up;
+        }
+        writeln!(f, "}}")?;
+        Ok(())
+    }
+}
+
 pub fn eval(node: &Node, scope: &Rc<Scope>) -> Result<Value, Error> {
     match node {
         Node::Id { name, .. } => scope
@@ -123,7 +137,7 @@ pub fn eval(node: &Node, scope: &Rc<Scope>) -> Result<Value, Error> {
             .ok_or(Error::UndefinedValue(name.clone())),
         Node::Integer { value, .. } => Ok(Value::Int(*value)),
         Node::Boolean { value, .. } => Ok(Value::Bool(*value)),
-        Node::String { value, .. } => Ok(Value::Str(value.clone())),
+        Node::String { value, .. } => Ok(Value::Text(value.clone())),
         Node::TypeAnno { op0, .. } => eval(op0, scope),
         Node::Invert { op0, .. } => Ok(match eval(op0, scope)? {
             Value::Bool(value) => Value::Bool(!value),
@@ -139,6 +153,7 @@ pub fn eval(node: &Node, scope: &Rc<Scope>) -> Result<Value, Error> {
             (BinOp::NE, Value::Int(lhs), Value::Int(rhs)) => Value::Bool(lhs == rhs),
             (BinOp::LT, Value::Int(lhs), Value::Int(rhs)) => Value::Bool(lhs < rhs),
             (BinOp::LE, Value::Int(lhs), Value::Int(rhs)) => Value::Bool(lhs <= rhs),
+            (BinOp::Add, Value::Text(lhs), Value::Text(rhs)) => Value::Text(Rc::from(lhs.to_string() + rhs.as_ref())),
             (op, lhs, rhs) => panic!("op: {:?}, lhs: {:?}, rhs: {:?}", op, lhs, rhs),
         }),
         Node::Call {
@@ -216,10 +231,14 @@ pub fn eval(node: &Node, scope: &Rc<Scope>) -> Result<Value, Error> {
                 .collect();
             Ok(Value::Record(fields?))
         }
-        Node::RecordType { typ, .. } => {
-            // TODO: Now that type checks are always enabled and work well, something
-            // like this should also work elsewhere:
-            Ok(Value::Type(typ.clone().unwrap()))
+        Node::RecordType { fields, .. } => {
+            // This does not work in case types have to be subst.:
+            // Ok(Value::Type(typ.clone().unwrap()))
+            let fields: Result<Vec<_>, _> = fields
+                .iter()
+                .map(|(name, typ)| eval(typ, scope).map(|v| (name.clone(), v.expect_type())))
+                .collect();
+            Ok(Value::Type(Rc::new(Type::Record(fields?))))
         }
         Node::AccessField { op0, field, .. } => match eval(op0, scope)? {
             Value::Record(fields) => Ok(fields
@@ -230,17 +249,22 @@ pub fn eval(node: &Node, scope: &Rc<Scope>) -> Result<Value, Error> {
                 .clone()),
             _ => panic!(),
         },
-        Node::As { op0, as_typ, .. } => {
-            match (eval(op0, scope)?, as_typ.as_ref().unwrap().as_ref()) {
-                (v, Type::Any) => Ok(Value::Any(op0.get_type().unwrap(), Box::new(v))),
-                (Value::Any(truetype, v), t) if *truetype == *t => {
-                    Ok(Value::Option(as_typ.clone().unwrap(), Some(v)))
+        Node::As { op0, as_raw, .. } => {
+            let t = eval(as_raw, scope)?.expect_type();
+            match (eval(op0, scope)?, t.as_ref()) {
+                (v, Type::Any) => Ok(Value::Any(Box::new(v))),
+                (Value::Any(v), _) if *v.get_type() == *t => {
+                    Ok(Value::Option(t.clone(), Some(v)))
                 }
-                (Value::Any(truetype, _), t) if *truetype != *t => {
-                    Ok(Value::Option(as_typ.clone().unwrap(), None))
+                (Value::Any(v), _) if *v.get_type() != *t => {
+                    Ok(Value::Option(t.clone(), None))
                 }
+                (v, Type::Text) => Ok(Value::Text(Rc::from(format!("{}", v)))),
                 (a, b) => todo!("{} as {}", a, b),
             }
+        }
+        Node::TypeOf { typ, .. } => {
+            Ok(Value::Type(typ.clone().unwrap()))
         }
     }
 }
@@ -248,7 +272,7 @@ pub fn eval(node: &Node, scope: &Rc<Scope>) -> Result<Value, Error> {
 pub fn add_builtins(rt: &mut Runtime) {
     rt.globals.insert("Int", Value::Type(rt.int_type.clone()));
     rt.globals.insert("Bool", Value::Type(rt.bool_type.clone()));
-    rt.globals.insert("Str", Value::Type(rt.str_type.clone()));
+    rt.globals.insert("Text", Value::Type(rt.text_type.clone()));
     rt.globals.insert("Type", Value::Type(rt.type_type.clone()));
     rt.globals.insert("Any", Value::Type(rt.any_type.clone()));
 
@@ -275,18 +299,18 @@ pub fn add_builtins(rt: &mut Runtime) {
         "Process/getenv",
         Builtin {
             name: "Process/getenv",
-            argtypes: vec![(x_str.clone(), rt.str_type.clone())],
-            rettyp: Rc::new(Type::Option(rt.str_type.clone())),
+            argtypes: vec![(x_str.clone(), rt.text_type.clone())],
+            rettyp: Rc::new(Type::Option(rt.text_type.clone())),
             f: Box::new(|args| {
                 let x = match &args[0] {
-                    Value::Str(x) => x,
+                    Value::Text(x) => x,
                     _ => panic!(),
                 };
                 Ok(Value::Option(
-                    Rc::new(Type::Str),
+                    Rc::new(Type::Text),
                     std::env::var(x.as_ref())
                         .ok()
-                        .map(|x| Box::new(Value::Str(Rc::from(x.as_ref())))),
+                        .map(|x| Box::new(Value::Text(Rc::from(x.as_ref())))),
                 ))
             }),
         },
@@ -376,6 +400,65 @@ pub fn add_builtins(rt: &mut Runtime) {
                             (Value::Option(_, None), v) => v.clone(),
                             _ => panic!(),
                         })
+                    }),
+                })))
+            }),
+        },
+    );
+
+    // Option/unwrap: ∀(A: Type) -> ∀(x1: Option(A)) -> A
+    let ph = Rc::new(Type::Placeholder(a_str.clone()));
+    rt.add_builtin(
+        "Option/unwrap",
+        Builtin {
+            name: "Option/unwrap",
+            argtypes: vec![(a_str.clone(), rt.type_type.clone())],
+            rettyp: Rc::new(Type::Lambda(
+                vec![(x_str.clone(), Rc::new(Type::Option(ph.clone())))],
+                ph,
+            )),
+            f: Box::new(|args| {
+                let a = args[0].expect_type();
+                Ok(Value::Builtin(Rc::new(Builtin {
+                    name: "Option/or(A)",
+                    argtypes: vec![(Rc::from("x"), Rc::new(Type::Option(a.clone())))],
+                    rettyp: a,
+                    f: Box::new(move |args| {
+                        Ok(match &args[0] {
+                            Value::Option(_, Some(v)) => *v.clone(),
+                            Value::Option(t, None) =>
+                                panic!("Rhall Option/unwrap called on None (type: {})!", t),
+                            _ => panic!(),
+                        })
+                    }),
+                })))
+            }),
+        },
+    );
+
+    // Option/isSome: ∀(A: Type) -> ∀(x1: Option(A)) -> Bool
+    let ph = Rc::new(Type::Placeholder(a_str.clone()));
+    rt.add_builtin(
+        "Option/isSome",
+        Builtin {
+            name: "Option/isSome",
+            argtypes: vec![(a_str.clone(), rt.type_type.clone())],
+            rettyp: Rc::new(Type::Lambda(
+                vec![(x_str.clone(), Rc::new(Type::Option(ph)))],
+                Rc::new(Type::Bool),
+            )),
+            f: Box::new(|args| {
+                let a = args[0].expect_type();
+                Ok(Value::Builtin(Rc::new(Builtin {
+                    name: "Option/or(A)",
+                    argtypes: vec![(Rc::from("x"), Rc::new(Type::Option(a)))],
+                    rettyp: Rc::new(Type::Bool),
+                    f: Box::new(move |args| {
+                        Ok(Value::Bool(match &args[0] {
+                            Value::Option(_, Some(_)) => true,
+                            Value::Option(_, None) => false,
+                            _ => panic!(),
+                        }))
                     }),
                 })))
             }),

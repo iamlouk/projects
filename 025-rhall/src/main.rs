@@ -11,6 +11,8 @@ mod ast;
 mod core;
 mod eval;
 mod lex;
+
+#[cfg(feature = "gc")]
 mod gc;
 
 use eval::{eval, Runtime, Scope};

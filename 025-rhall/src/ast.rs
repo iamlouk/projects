@@ -118,6 +118,11 @@ pub enum Node {
         as_raw: Box<Node>,
         as_typ: Option<Rc<Type>>,
     },
+    TypeOf {
+        sloc: SLoc,
+        typ: Option<Rc<Type>>,
+        op0: Box<Node>
+    },
 }
 
 impl Node {
@@ -140,6 +145,7 @@ impl Node {
             Node::RecordType { typ, .. } => typ,
             Node::AccessField { typ, .. } => typ,
             Node::As { typ, .. } => typ,
+            Node::TypeOf { typ, .. } => typ,
         };
         typ.clone()
     }
@@ -163,6 +169,7 @@ impl Node {
             Node::RecordType { typ, .. } => *typ = Some(t),
             Node::AccessField { typ, .. } => *typ = Some(t),
             Node::As { typ, .. } => *typ = Some(t),
+            Node::TypeOf { typ, .. } => *typ = Some(t),
         };
     }
 
@@ -208,7 +215,7 @@ impl Node {
             }
             Node::String { typ: Some(t), .. } => Ok(t.clone()),
             Node::String { typ, .. } => {
-                let t = rt.str_type.clone();
+                let t = rt.text_type.clone();
                 *typ = Some(t.clone());
                 Ok(t)
             }
@@ -284,6 +291,7 @@ impl Node {
                         ))
                     }
                     (_, false, Type::Int) => lhsty,
+                    (BinOp::Add, _, Type::Text) => lhsty,
                     (op, _, _) => panic!(
                         "binop error: {:?} {:?} {:?}",
                         lhsty.as_ref(),
@@ -454,9 +462,11 @@ impl Node {
                         return Err(Error::Uncallable(
                             *sloc,
                             format!(
-                                "argument {} has type {}, expected: {}",
+                                "argument {} has type {} ({:?}), expected: {} ({:?})",
                                 arg_name.as_ref(),
                                 typ.as_ref(),
+                                typ.as_ref(),
+                                arg_type.as_ref(),
                                 arg_type.as_ref()
                             ),
                         ));
@@ -608,8 +618,20 @@ impl Node {
                         *typ = Some(t.clone());
                         Ok(t)
                     }
+                    (_, Type::Text) => {
+                        let t = rt.text_type.clone();
+                        *typ = Some(t.clone());
+                        Ok(t)
+                    }
                     (a, b) => todo!("{} as {}", a, b),
                 }
+            }
+            Node::TypeOf { typ: Some(t), .. } => Ok(t.clone()),
+            Node::TypeOf { typ, op0, .. } => {
+                let t = op0.typecheck(rt, None)?;
+                *typ = Some(t.clone());
+                let t = Rc::new(Type::TypeOf(t));
+                Ok(t)
             }
         }
     }
@@ -729,6 +751,7 @@ impl std::fmt::Display for Node {
                 write!(f, "({}).{}", op0.as_ref(), field.as_ref())
             }
             Node::As { op0, as_raw, .. } => write!(f, "({} as {})", op0, as_raw),
+            Node::TypeOf { op0, .. } => write!(f, "typeof({})", op0)
         }
     }
 }
@@ -825,7 +848,7 @@ impl<'a> Parser<'a> {
             self.lexer.next();
             let (_, name) = self.expect_id()?;
             let typhint = match self.consume_if(Tok::Colon) {
-                true => Some(self.parse_final()?),
+                true => Some(self.parse_expr0()?),
                 false => None,
             };
             self.expect_token(Tok::Assign)?;
@@ -1068,6 +1091,11 @@ impl<'a> Parser<'a> {
                     rettyp: Rc::new(RefCell::new(*rettyp)),
                 }
             }
+            Tok::Typeof => Node::TypeOf {
+                sloc,
+                typ: None,
+                op0: self.parse_expr0()?
+            },
             _ => unimplemented!(),
         }))
     }
