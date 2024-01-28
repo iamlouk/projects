@@ -243,7 +243,7 @@ impl Node {
             Node::Invert { typ: Some(t), .. } => Ok(t.clone()),
             Node::Invert { sloc, typ, op0 } => {
                 let t = op0.typecheck(rt, None)?;
-                if *t != Type::Boolean && *t != Type::Integer {
+                if *t != Type::Bool && *t != Type::Int {
                     return Err(Error::TypeError(
                         *sloc,
                         format!("invalid type for '~' operator: {}", t),
@@ -275,15 +275,15 @@ impl Node {
                 }
 
                 let t = match (op, iscmp, lhsty.as_ref()) {
-                    (_, true, Type::Integer) => rt.bool_type.clone(),
-                    (BinOp::And | BinOp::Or, _, Type::Boolean) => lhsty,
+                    (_, true, Type::Int) => rt.bool_type.clone(),
+                    (BinOp::And | BinOp::Or, _, Type::Bool) => lhsty,
                     (BinOp::And | BinOp::Or, _, _) => {
                         return Err(Error::TypeError(
                             *sloc,
                             "'&' and '|' only work for booleans".to_string(),
                         ))
                     }
-                    (_, false, Type::Integer) => lhsty,
+                    (_, false, Type::Int) => lhsty,
                     (op, _, _) => panic!(
                         "binop error: {:?} {:?} {:?}",
                         lhsty.as_ref(),
@@ -303,7 +303,7 @@ impl Node {
                 op2,
             } => {
                 let op0ty = op0.typecheck(rt, None)?;
-                if *op0ty != Type::Boolean {
+                if *op0ty != Type::Bool {
                     return Err(Error::TypeError(
                         *sloc,
                         format!(

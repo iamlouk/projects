@@ -23,9 +23,9 @@ impl Runtime {
             globals: std::collections::HashMap::new(),
             string_pool: std::collections::HashSet::new(),
             locals: Vec::new(),
-            int_type: Rc::new(Type::Integer),
-            bool_type: Rc::new(Type::Boolean),
-            str_type: Rc::new(Type::String),
+            int_type: Rc::new(Type::Int),
+            bool_type: Rc::new(Type::Bool),
+            str_type: Rc::new(Type::Str),
             type_type: Rc::new(Type::TypeOfType),
             any_type: Rc::new(Type::Any),
         };
@@ -283,7 +283,7 @@ pub fn add_builtins(rt: &mut Runtime) {
                     _ => panic!(),
                 };
                 Ok(Value::Option(
-                    Rc::new(Type::String),
+                    Rc::new(Type::Str),
                     std::env::var(x.as_ref())
                         .ok()
                         .map(|x| Box::new(Value::Str(Rc::from(x.as_ref())))),
