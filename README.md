@@ -148,3 +148,15 @@ Tags: __*Rust*__, __*Interpreter*__
 
 A tiny super bad interpreter for a [Dhall](https://github.com/dhall-lang/dhall-lang)-like language subset, but with recursion! The prototype works, but is missing a lot of futures. I might come back to it to improve it and fix a known bug in the type checker. All [examples](./025-rhall/examples) work.
 
+### 026: [SystemC](./027-testing-systemc)
+
+Tags: __*SystemC*__
+
+Refreshing some super basic System-C skills.
+
+### 027: [Python JIT](./028-python-jit)
+
+Tags: __*LLVM*__, __*Python*__, __*JIT*__
+
+A `@jit` Python decorator that causes the given function to become a DSL and be jit-ted. Only a very very basic prototype.
+
