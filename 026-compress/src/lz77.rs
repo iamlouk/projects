@@ -28,12 +28,24 @@ fn compress<'a>(input: &'a [u8]) -> Vec<u8> {
         buf.push(((by >> 8) & 0xff) as u8);
     };
 
+    /* Iterate over the input. */
     while pos + MIN_MATCH_LEN < input.len() {
         let window_start = pos - std::cmp::min(pos, WINDOW_SIZE);
 
         let mut longest_match_len: usize = MIN_MATCH_LEN;
         let mut longest_match: Option<(usize, usize)> = None;
 
+        /*
+         * TODO: Instead of just finding matches by traversing all of the window,
+         * how about tracking stuff that has repeated before, and trying these
+         * existing matches first, only creating a new pattern if no existing one
+         * matched? I am not sure but I think this is how deflate/gzip works.
+         * The patterns (for which it was tracked how often they appeared) could
+         * then be huffman-encoded?
+         */
+        /* Iterate over all characters in the WINDOW_SIZE last characters of the
+         * input, and find the longest sub-sequence (and it's length) in the window
+         * that contains identical characters to the sequence starting at pos. */
         for i in window_start..(pos - MIN_MATCH_LEN) {
             if input[i] != input[pos] || input[i + 1] != input[pos + 1] {
                 continue
@@ -51,6 +63,7 @@ fn compress<'a>(input: &'a [u8]) -> Vec<u8> {
             }
         }
 
+        /* If a match was found, encode it. */
         if let Some(m) = longest_match {
             if raw.1 - raw.0 > 0 {
                 encode(&mut output, &input[raw.0..raw.1]);
@@ -73,6 +86,7 @@ fn decompress<'a>(input: &'a [u8]) -> Vec<u8> {
     let mut output = Vec::new();
     let mut pos: usize = 0;
     while pos < input.len() {
+        /* Copy over uncompressed parts: */
         if input[pos] != ESCAPE_CHAR {
             output.push(input[pos]);
             pos += 1;
@@ -85,6 +99,7 @@ fn decompress<'a>(input: &'a [u8]) -> Vec<u8> {
             continue;
         }
 
+        /* Decode the information on how far we need to go back. */
         let lookback_len: usize = input[pos + 1] as usize;
         let lookback_by: usize = ((input[pos + 2] as usize) & 0xff) |
                                  (((input[pos + 3] as usize) & 0xff) << 8);
