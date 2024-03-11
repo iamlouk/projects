@@ -38,6 +38,41 @@ impl Node {
         self.children[1].as_ref().unwrap().get_encoding(
             (prefix.0 | (1 << prefix.1), prefix.1 + 1), encodings);
     }
+
+    fn encode(&self, buf: &mut Vec<u8>) {
+        if let Some(v) = self.value {
+            buf.push(0x00);
+            buf.push(v);
+            return;
+        }
+        buf.push(0x01);
+        self.children[0].as_ref().unwrap().encode(buf);
+        self.children[1].as_ref().unwrap().encode(buf);
+    }
+
+    fn decode(buf: &[u8], pos: &mut usize) -> Box<Node> {
+        let c = buf[*pos];
+        assert!(c == 0x00 || c == 0x01);
+        if c == 0x00 {
+            let node = Box::new(Node {
+                freq: 0,
+                value: Some(buf[*pos + 1]),
+                children: [None, None]
+            });
+
+            *pos += 2;
+            return node;
+        }
+
+        *pos += 1;
+        let lhs = Self::decode(buf, pos);
+        let rhs = Self::decode(buf, pos);
+        Box::new(Node {
+            freq: 0,
+            value: None,
+            children: [Some(lhs), Some(rhs)]
+        })
+    }
 }
 
 impl PartialOrd for Node {
@@ -56,7 +91,7 @@ impl Ord for Node {
  * Huffman encode/compress input where the alphabet is the individual
  * bytes. The encoding tree is calculated based on the input and also returned.
  */
-fn compress<'a>(input: &'a [u8]) -> (Box<Node>, usize, Vec<u8>) {
+fn compress<'a>(input: &'a [u8]) -> (Box<Node>, usize, Vec<u64>) {
     let mut byte_freqs = [0 as usize; 256];
     for c in input {
         byte_freqs[*c as usize] += 1;
@@ -90,40 +125,40 @@ fn compress<'a>(input: &'a [u8]) -> (Box<Node>, usize, Vec<u8>) {
     nodes[0].get_encoding((0, 0), &mut encodings);
 
     /* Encode the input using the encoding created above. */
-    let mut output: Vec<u8> = Vec::new();
-    let mut current_byte: u8 = 0x0;
-    let mut current_byte_pos = 0;
+    let mut output: Vec<u64> = Vec::new();
+    let mut current_word: u64 = 0x0;
+    let mut current_bit_pos = 0;
     for c in input {
         let enc = encodings[*c as usize];
         for bitpos in 0..enc.1 {
-            let bit = ((enc.0 >> bitpos) & 0x1) as u8;
-            current_byte |= bit << current_byte_pos;
-            current_byte_pos += 1;
-            if current_byte_pos >= 8 {
-                output.push(current_byte);
-                current_byte_pos = 0;
-                current_byte = 0;
+            let bit = ((enc.0 >> bitpos) & 0x1) as u64;
+            current_word |= bit << current_bit_pos;
+            current_bit_pos += 1;
+            if current_bit_pos >= 64 {
+                output.push(current_word);
+                current_bit_pos = 0;
+                current_word = 0;
             }
         }
     }
 
-    let num_bits = output.len() * 8 + current_byte_pos;
-    output.push(current_byte);
+    let num_bits = output.len() * 64 + current_bit_pos;
+    output.push(current_word);
     (nodes.pop().unwrap(), num_bits, output)
 }
 
-fn decompress<'a>(tree: &Box<Node>, num_bits: usize, input: &'a [u8]) -> Vec<u8> {
+fn decompress<'a>(tree: &Box<Node>, num_bits: usize, input: &'a [u64]) -> Vec<u8> {
     let mut output: Vec<u8> = Vec::new();
 
-    let mut current_byte_pos: usize = 0;
+    let mut current_word_pos: usize = 0;
     let mut current_bit_pos: usize = 0;
 
     let mut next_bit = || {
-        if (current_byte_pos * 8) + current_bit_pos < num_bits {
-            let bit = (input[current_byte_pos] >> current_bit_pos) & 0x1 != 0;
+        if (current_word_pos * 64) + current_bit_pos < num_bits {
+            let bit = (input[current_word_pos] >> current_bit_pos) & 0x1 != 0;
             current_bit_pos += 1;
-            if current_bit_pos == 8 {
-                current_byte_pos += 1;
+            if current_bit_pos == 64 {
+                current_word_pos += 1;
                 current_bit_pos = 0;
             }
             Some(bit)
@@ -155,12 +190,17 @@ mod tests {
         let input = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur sit amet justo nibh. Donec in diam et mi porta rhoncus eu non sem. Mauris vehicula laoreet libero at bibendum. Nam in efficitur sem, id iaculis felis. Vivamus dapibus vestibulum ultricies. Nulla justo massa, volutpat sed bibendum vel, posuere in lacus. Duis commodo lectus a eros feugiat, nec faucibus quam efficitur. Etiam blandit sapien a posuere porttitor. Curabitur fermentum, nisl nec ultrices volutpat, lectus enim cursus orci, sed finibus nisi erat hendrerit lorem. Ut eget diam eget sem egestas faucibus quis et lectus. Donec pharetra arcu cursus imperdiet aliquet. Sed nisi orci, scelerisque efficitur elit quis, sagittis rutrum velit. Duis et felis nunc. Nam urna ipsum, fermentum ut urna eu, hendrerit suscipit nisl.\nCurabitur volutpat metus ut vestibulum varius. Proin luctus metus arcu, non lobortis diam interdum at. Cras feugiat maximus lacus, a egestas urna blandit cursus. In molestie convallis massa, quis tincidunt dolor faucibus in. Praesent porttitor pulvinar turpis, luctus sagittis metus fringilla quis. Praesent venenatis tellus sit amet risus viverra, non maximus urna mattis. Aliquam ligula nunc, mollis at quam vel, vestibulum tincidunt nisl. Curabitur massa tortor, pharetra eu felis id, tincidunt sollicitudin nulla. Nullam sollicitudin iaculis tellus, eu venenatis elit scelerisque eu. Curabitur finibus diam et lectus ultricies, et pretium lacus pharetra. Vestibulum tincidunt arcu efficitur ipsum egestas, eget sollicitudin lectus efficitur. Praesent ultrices vel urna a semper.\nNam ultricies nisi neque, quis fringilla lectus tempus vel. Nam placerat ex lorem, ac molestie lorem aliquet id. Maecenas sed dui bibendum, elementum nunc non, congue lectus. Etiam semper gravida magna, a congue sapien sagittis vel. In dignissim neque quam, quis faucibus justo mattis a. Sed facilisis eleifend libero vitae fermentum. Ut porttitor neque non ipsum gravida ullamcorper. Aliquam odio nisl, posuere eu elit sit amet, auctor semper odio. Donec finibus ipsum ipsum, non sollicitudin lectus consequat bibendum.\nPellentesque consectetur semper orci mollis maximus. Integer egestas ut risus quis vulputate. Aliquam eu egestas nibh. Etiam id dapibus purus. Aenean non finibus tortor, in pharetra ex. Suspendisse ut justo tortor. Aliquam elementum nec massa vitae sollicitudin.\nEtiam libero velit, congue nec imperdiet sed, iaculis id sem. Vivamus euismod leo sem, sed faucibus nisl congue in. Quisque pulvinar ligula vitae urna vulputate, ac dictum nisl pretium. Mauris viverra justo quis rhoncus volutpat. Nullam et odio sed dui vehicula gravida. Etiam eu nibh eget felis egestas euismod. Pellentesque finibus, ligula id luctus sollicitudin, lorem justo condimentum nisi, vel euismod leo lectus gravida nunc. Suspendisse non lacus mauris. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae;";
 
         let (tree, n, compressed) = compress(input.as_bytes());
+        let mut encoded_tree: Vec<u8> = Vec::new();
+        tree.encode(&mut encoded_tree);
+        let decoded_tree = Node::decode(&encoded_tree, &mut 0);
 
-        let mut prefix = Vec::new();
-        tree.dump(&mut prefix);
+        // let mut prefix = Vec::new();
+        // tree.dump(&mut prefix);
 
-        eprintln!("size: {}, compressed: {}", input.len(), compressed.len());
-        let decompressed = decompress(&tree, n, &compressed);
+        eprintln!("size: {}, compressed: {}",
+            input.len(),
+            compressed.len() * 8 + encoded_tree.len());
+        let decompressed = decompress(&decoded_tree, n, &compressed);
         assert_eq!(input.as_bytes(), decompressed.as_slice());
     }
 }
