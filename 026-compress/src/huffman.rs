@@ -3,7 +3,7 @@
 struct Node {
     freq: usize,
     value: Option<u8>,
-    children: [Option<Box<Node>>; 2]
+    children: [Option<Box<Node>>; 2],
 }
 
 impl Node {
@@ -33,10 +33,14 @@ impl Node {
             return;
         }
 
-        self.children[0].as_ref().unwrap().get_encoding(
-            (prefix.0, prefix.1 + 1), encodings);
-        self.children[1].as_ref().unwrap().get_encoding(
-            (prefix.0 | (1 << prefix.1), prefix.1 + 1), encodings);
+        self.children[0]
+            .as_ref()
+            .unwrap()
+            .get_encoding((prefix.0, prefix.1 + 1), encodings);
+        self.children[1]
+            .as_ref()
+            .unwrap()
+            .get_encoding((prefix.0 | (1 << prefix.1), prefix.1 + 1), encodings);
     }
 
     fn encode(&self, buf: &mut Vec<u8>) {
@@ -57,7 +61,7 @@ impl Node {
             let node = Box::new(Node {
                 freq: 0,
                 value: Some(buf[*pos + 1]),
-                children: [None, None]
+                children: [None, None],
             });
 
             *pos += 2;
@@ -70,7 +74,7 @@ impl Node {
         Box::new(Node {
             freq: 0,
             value: None,
-            children: [Some(lhs), Some(rhs)]
+            children: [Some(lhs), Some(rhs)],
         })
     }
 }
@@ -98,9 +102,17 @@ fn compress<'a>(input: &'a [u8]) -> (Box<Node>, usize, Vec<u64>) {
     }
 
     /* Build up a initial set of nodes, all-leaf, ordered by frequency (decreasing). */
-    let mut nodes: Vec<Box<Node>> = byte_freqs.iter().enumerate().map(|(i, freq)|
-        Box::new(Node {
-            value: Some(i as u8), freq: *freq, children: [None, None] })).collect();
+    let mut nodes: Vec<Box<Node>> = byte_freqs
+        .iter()
+        .enumerate()
+        .map(|(i, freq)| {
+            Box::new(Node {
+                value: Some(i as u8),
+                freq: *freq,
+                children: [None, None],
+            })
+        })
+        .collect();
     nodes.retain(|a| a.freq > 0);
     nodes.sort();
 
@@ -111,7 +123,7 @@ fn compress<'a>(input: &'a [u8]) -> (Box<Node>, usize, Vec<u64>) {
         let n = Box::new(Node {
             value: None,
             freq: n1.freq + n2.freq,
-            children: [Some(n1), Some(n2)]
+            children: [Some(n1), Some(n2)],
         });
 
         /* Sorted insertion (again, by frequency): */
@@ -197,11 +209,12 @@ mod tests {
         // let mut prefix = Vec::new();
         // tree.dump(&mut prefix);
 
-        eprintln!("size: {}, compressed: {}",
+        eprintln!(
+            "size: {}, compressed: {}",
             input.len(),
-            compressed.len() * 8 + encoded_tree.len());
+            compressed.len() * 8 + encoded_tree.len()
+        );
         let decompressed = decompress(&decoded_tree, n, &compressed);
         assert_eq!(input.as_bytes(), decompressed.as_slice());
     }
 }
-
