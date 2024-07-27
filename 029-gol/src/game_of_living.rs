@@ -1,13 +1,5 @@
-use crate::CA;
+use crate::CACell;
 use rand::Rng;
-
-pub struct GameOfLiving;
-
-impl GameOfLiving {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
 
 #[derive(Clone, Copy, Default)]
 pub enum Cell {
@@ -16,16 +8,16 @@ pub enum Cell {
     Alive,
 }
 
-impl CA<Cell> for GameOfLiving {
-    fn initialize(&self, rng: &mut rand::prelude::ThreadRng, _x: i64, _y: i64) -> Cell {
-        match rng.gen_range(0..3) {
-            0 => Cell::Alive,
-            _ => Cell::Dead,
-        }
+impl CACell for Cell {
+    fn init(&mut self, rng: &mut rand::prelude::ThreadRng, _x: i64, _y: i64) {
+        *self = match rng.gen_ratio(1, 3) {
+            true => Cell::Alive,
+            false => Cell::Dead,
+        };
     }
 
-    fn render(&self, cell: Cell) -> sdl2::pixels::Color {
-        match cell {
+    fn render(&self) -> sdl2::pixels::Color {
+        match self {
             Cell::Alive => sdl2::pixels::Color::BLACK,
             Cell::Dead => sdl2::pixels::Color::WHITE,
         }
@@ -35,7 +27,6 @@ impl CA<Cell> for GameOfLiving {
         &self,
         x: i64,
         y: i64,
-        cell: Cell,
         get_cell: impl Fn(i64, i64) -> Cell,
         _: &mut rand::prelude::ThreadRng,
     ) -> Cell {
@@ -58,10 +49,10 @@ impl CA<Cell> for GameOfLiving {
             })
             .sum();
 
-        match (cell, living_neighbours) {
+        match (self, living_neighbours) {
             (Cell::Alive, n) if n < 2 || n > 3 => Cell::Dead,
             (Cell::Dead, 3) => Cell::Alive,
-            _ => cell,
+            _ => *self,
         }
     }
 }

@@ -1,6 +1,6 @@
 use rand::Rng;
 
-use crate::CA;
+use crate::CACell;
 
 #[derive(Default, PartialEq, Clone, Copy)]
 pub enum Cell {
@@ -14,11 +14,9 @@ pub enum Cell {
     Burning3,
 }
 
-pub struct ForestFire;
-
-impl CA<Cell> for ForestFire {
-    fn initialize(&self, rng: &mut rand::prelude::ThreadRng, x: i64, y: i64) -> Cell {
-        match rng.gen_bool(0.001) {
+impl CACell for Cell {
+    fn init(&mut self, rng: &mut rand::prelude::ThreadRng, _x: i64, _y: i64) {
+        *self = match rng.gen_bool(0.001) {
             true => Cell::Sappling,
             false => Cell::Empty,
         }
@@ -28,11 +26,10 @@ impl CA<Cell> for ForestFire {
         &self,
         x: i64,
         y: i64,
-        cell: Cell,
         get_cell: impl Fn(i64, i64) -> Cell,
         rng: &mut rand::prelude::ThreadRng,
     ) -> Cell {
-        match cell {
+        match self {
             Cell::Fire => Cell::Burning1,
             Cell::Sappling => Cell::Tree,
             Cell::Burning1 => Cell::Burning2,
@@ -56,9 +53,9 @@ impl CA<Cell> for ForestFire {
         }
     }
 
-    fn render(&self, cell: Cell) -> sdl2::pixels::Color {
+    fn render(&self) -> sdl2::pixels::Color {
         use sdl2::pixels::Color;
-        match cell {
+        match self {
             Cell::Empty => Color::RGB(0x33, 0x33, 0x00),
             Cell::Sappling => Color::RGB(0x33, 0x66, 0x00),
             Cell::Tree => Color::RGB(0x99, 0xbb, 0x00),

@@ -1,39 +1,33 @@
 use rand::Rng;
 
-use crate::CA;
-
-pub struct Continous;
+use crate::CACell;
 
 pub type Cell = f32;
 
 static mut NEIGHBOURS: [(i64, i64); 216] = [(0, 0); 216];
 
-impl Continous {
-    pub fn new() -> Self {
-        let mut i = 0;
-        for x in (-7)..8 {
-            for y in (-7)..8 {
-                if (x <= 1 && x >= -1) && (y <= 1 && y >= -1) {
-                    continue;
-                }
+impl CACell for Cell {
+    fn init(&mut self, rng: &mut rand::prelude::ThreadRng, x: i64, y: i64) {
+        if x == 0 && y == 0 {
+            let mut i = 0;
+            for x in (-7)..8 {
+                for y in (-7)..8 {
+                    if (x <= 1 && x >= -1) && (y <= 1 && y >= -1) {
+                        continue;
+                    }
 
-                unsafe {
-                    NEIGHBOURS[i] = (x, y);
+                    unsafe {
+                        NEIGHBOURS[i] = (x, y);
+                    }
+                    i += 1;
                 }
-                i += 1;
             }
         }
-        Self {}
-    }
-}
-
-impl CA<Cell> for Continous {
-    fn initialize(&self, rng: &mut rand::prelude::ThreadRng, _x: i64, _y: i64) -> Cell {
-        rng.gen_range((-1.)..1.)
+        *self = rng.gen_range((-1.)..1.);
     }
 
-    fn render(&self, cell: f32) -> sdl2::pixels::Color {
-        let abs = cell.abs();
+    fn render(&self) -> sdl2::pixels::Color {
+        let abs = self.abs();
         sdl2::pixels::Color::RGB(
             (abs * 255.0) as u8,
             (abs * 255.0) as u8,
@@ -45,7 +39,6 @@ impl CA<Cell> for Continous {
         &self,
         x: i64,
         y: i64,
-        cell: Cell,
         get_cell: impl Fn(i64, i64) -> Cell,
         _: &mut rand::prelude::ThreadRng,
     ) -> Cell {
@@ -53,7 +46,7 @@ impl CA<Cell> for Continous {
             .map(|(dx, dy)| get_cell(x + dx, y + dy))
             .sum();
         let avg = sum / unsafe { NEIGHBOURS.len() as f32 };
-        let x = match (cell, avg) {
+        let x = match (*self, avg) {
             (c, a) if c < 0. && a > -0.2 => -c + 0.025,
 
             (c, a) if c > 0. && a < 0. => -c - 0.025,

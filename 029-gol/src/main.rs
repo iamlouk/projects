@@ -14,24 +14,23 @@ mod continous;
 mod forestfire;
 mod game_of_living;
 
-pub trait CA<Cell: Clone + Default> {
-    fn initialize(&self, rng: &mut rand::prelude::ThreadRng, x: i64, y: i64) -> Cell;
-    fn render(&self, cell: Cell) -> sdl2::pixels::Color;
+pub trait CACell: Copy + Default + Send + Sync {
+    fn init(&mut self, rng: &mut rand::prelude::ThreadRng, x: i64, y: i64);
+    fn render(&self) -> sdl2::pixels::Color;
     fn update(
         &self,
         x: i64,
         y: i64,
-        cell: Cell,
-        get_cell: impl Fn(i64, i64) -> Cell,
+        get_cell: impl Fn(i64, i64) -> Self,
         rng: &mut rand::prelude::ThreadRng,
-    ) -> Cell;
+    ) -> Self;
 }
 
 const CELLS_X: u32 = 300;
 const CELLS_Y: u32 = 300;
 const PIXEL_SIZE: u32 = 1;
 
-pub fn run<CACell: Clone + Copy + Default + Send + Sync, CAImpl: CA<CACell> + Sync>(ca: CAImpl) {
+pub fn run<Cell: CACell>() {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
@@ -43,10 +42,10 @@ pub fn run<CACell: Clone + Copy + Default + Send + Sync, CAImpl: CA<CACell> + Sy
 
     let mut canvas = window.into_canvas().build().unwrap();
     let mut cells_prev = Some(Box::new(
-        [[CACell::default(); CELLS_Y as usize]; CELLS_X as usize],
+        [[Cell::default(); CELLS_Y as usize]; CELLS_X as usize],
     ));
     let mut cells_next = Some(Box::new(
-        [[CACell::default(); CELLS_Y as usize]; CELLS_X as usize],
+        [[Cell::default(); CELLS_Y as usize]; CELLS_X as usize],
     ));
 
     {
@@ -54,7 +53,7 @@ pub fn run<CACell: Clone + Copy + Default + Send + Sync, CAImpl: CA<CACell> + Sy
         let cells = cells_next.as_mut().unwrap();
         for i in 0..(CELLS_X as i64) {
             for j in 0..(CELLS_Y as i64) {
-                cells[i as usize][j as usize] = ca.initialize(&mut rng, i, j);
+                cells[i as usize][j as usize].init(&mut rng, i, j);
             }
         }
     }
@@ -83,7 +82,7 @@ pub fn run<CACell: Clone + Copy + Default + Send + Sync, CAImpl: CA<CACell> + Sy
             let cells = cells_next.as_ref().unwrap();
             for i in 0..(CELLS_X as usize) {
                 for j in 0..(CELLS_Y as usize) {
-                    let c = ca.render(cells[i][j]);
+                    let c = cells[i][j].render();
                     if prev_col != c {
                         canvas.set_draw_color(c);
                         prev_col = c;
@@ -127,10 +126,9 @@ pub fn run<CACell: Clone + Copy + Default + Send + Sync, CAImpl: CA<CACell> + Sy
                 let mut rng = rand::thread_rng();
                 for j in 0..(CELLS_Y as i64) {
                     let old_cell = old_state[i as usize][j as usize];
-                    let new_cell = ca.update(
+                    let new_cell = old_cell.update(
                         i,
                         j,
-                        old_cell,
                         |i, j| {
                             let (i, j) = wrap_idxs(i, j);
                             old_state[i][j]
@@ -145,7 +143,6 @@ pub fn run<CACell: Clone + Copy + Default + Send + Sync, CAImpl: CA<CACell> + Sy
         }
 
         frames += 1;
-        // app.update();
     }
 
     let duration = std::time::Instant::now() - t0;
@@ -160,8 +157,8 @@ fn main() {
         .unwrap();
     */
 
-    run::<forestfire::Cell, forestfire::ForestFire>(forestfire::ForestFire);
-    // run::<colors::Cell, colors::Colors>(colors::Colors);
-    // run::<continous::Cell, continous::Continous>(continous::Continous);
-    // run::<game_of_living::Cell, game_of_living::GameOfLiving>(game_of_living::GameOfLiving);
+    run::<game_of_living::Cell>();
+    run::<forestfire::Cell>();
+    run::<colors::Cell>();
+    run::<continous::Cell>();
 }
