@@ -1,5 +1,9 @@
 # Hello World!
 
+Future Ideas:
+
+- A REDIS clone (using epoll etc), maybe in Rust?
+
 Projects to small for their own repository or just small little things I want to try out.
 
 ### 001: [Minesweeper](./001-minesweeper)
@@ -150,6 +154,10 @@ A tiny super bad interpreter for a [Dhall](https://github.com/dhall-lang/dhall-l
 
 ### 026: [YAC: Yet Another Compression](./026-compress)
 
+Tags: __*Rust*__, __*Huffmann-Encoding*__, __*LZ77*__
+
+A sliding-window compression and decompression in Rust using Huffmann encoding and LZ77. It is inspired by [how the *deflate* algorithm works](https://www.zlib.net/feldspar.html), but is super super shitty and crap and not at all how it actually works.
+
 ### 027: [SystemC](./027-testing-systemc)
 
 Tags: __*SystemC*__
@@ -161,4 +169,9 @@ Refreshing some super basic System-C skills.
 Tags: __*LLVM*__, __*Python*__, __*JIT*__
 
 A `@jit` Python decorator that causes the given function to become a DSL and be jit-ted. Only a very very basic prototype.
+
+
+### 029: [Game Of Living](./029-gol)
+
+A [cellular automata inspired by this](https://www.youtube.com/watch?v=WMJ1H3Ai-qs). I played a lot with CAs a few years ago, and wanted to try out some new rules here.
 
