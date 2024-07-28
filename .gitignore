@@ -1,4 +1,3 @@
-
 a.out
 *.o
 *.so
@@ -15,3 +14,4 @@ went-nowhere
 /007-mini-vm/minivm
 /015-shitty-sve-ie/example/add_vecs
 /017-qemu+dwarf/qemu
+/030-mnist/data
