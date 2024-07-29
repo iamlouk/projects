@@ -5,8 +5,8 @@ use std::{io::{stdout, Write}, time::Duration};
 use crossterm::{style::Color, event::KeyEvent, QueueableCommand};
 use crate::rand::distributions::Distribution;
 
-const ROWS: isize = 25;
-const COLS: isize = 11;
+const ROWS: isize = 32;
+const COLS: isize = 15;
 
 fn draw_border(w: &mut dyn std::io::Write) -> Result<(), std::io::Error> {
     w.queue(crossterm::style::SetForegroundColor(Color::White))?;
@@ -73,7 +73,7 @@ impl Game {
     fn random_shape(&mut self) -> Shape {
         let c = Color::Reset;
         let x = self.random_color();
-        match rand::distributions::Uniform::from(0..7).sample(&mut self.rng) {
+        match rand::distributions::Uniform::from(0..8).sample(&mut self.rng) {
             0 => Shape([[c, c, c],
                         [c, x, x],
                         [c, x, x]]),
@@ -95,6 +95,9 @@ impl Game {
             6 => Shape([[c, x, c],
                         [c, x, c],
                         [x, x, c]]),
+            7 => Shape([[c, x, c],
+                        [c, x, c],
+                        [c, x, c]]),
             _ => panic!()
         }
     }
@@ -270,7 +273,10 @@ impl Game {
 fn check_terminal_size() -> bool {
     let (cols, rows) = match crossterm::terminal::size() {
         Ok((cols, rows)) => (cols as isize, rows as isize),
-        Err(_) => return false
+        Err(e) => {
+            eprintln!("terminal error: {:?}", e);
+            return false
+        }
     };
 
     cols >= 2 + 2 * COLS && rows >= 5 + ROWS
@@ -368,7 +374,7 @@ fn main() -> Result<(), std::io::Error> {
             sleep_time = Duration::from_secs_f32(sleep_time.as_secs_f32() * 0.99f32);
             game.change_color(&mut stdout, Color::Reset)?;
             stdout.queue(crossterm::cursor::MoveTo(0, 0))?;
-            write!(&mut stdout, "Tetris! {}, fps={:.1}", score,
+            write!(&mut stdout, "Tetris! score={}, fps={:.1}", score,
                 1. / sleep_time.as_secs_f32())?;
         }
     }

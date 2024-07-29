@@ -993,12 +993,12 @@ impl<'a> Parser<'a> {
                 typ: None,
                 name,
             },
-            Tok::Boolean(value) => Node::Boolean {
+            Tok::Bool(value) => Node::Boolean {
                 sloc,
                 typ: None,
                 value,
             },
-            Tok::Integer(value) => Node::Integer {
+            Tok::Int(value) => Node::Integer {
                 sloc,
                 typ: None,
                 value,

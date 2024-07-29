@@ -12,6 +12,12 @@
 			"mode": "first-line",
 			"match": "^(GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH) .* HTTP\\/.*$",
 			"dstport": 8080
+		},
+		{
+			"name": "FOO",
+			"mode": "first-line",
+			"match": "^foo$",
+			"dstport": 1234
 		}
 	],
 	"fallback-response": "Unknown/Unexpected Protocol"
