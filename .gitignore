@@ -11,7 +11,7 @@ went-nowhere
 /*/build
 /venv
 
-
+/000-*
 /007-mini-vm/minivm
 /015-shitty-sve-ie/example/add_vecs
 /017-qemu+dwarf/qemu
