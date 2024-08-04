@@ -1,0 +1,5 @@
+-D_FILE_OFFSET_BITS=64
+-DFUSE_USE_VERSION=31
+-Wall
+-Wextra
+-O1
