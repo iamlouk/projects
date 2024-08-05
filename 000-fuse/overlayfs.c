@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <fuse/fuse.h>
@@ -72,7 +73,7 @@ struct ofs_file {
   const char *name;
 
   bool has_underlying;
-  int underlying_fd;
+  int underlying_fd; /* TODO: Caching mechanism?! */
   struct stat underlying_stats;
 
   struct ofs_file *parent;
@@ -153,6 +154,19 @@ static struct ofs_file *ofs_file_init(struct ofs_file *dir, bool is_file,
   f->gid = dir ? dir->gid : getgid();
   f->parent = dir;
   if (dir) {
+    /* Check for a underlying file/directcory. */
+    if (dir->has_underlying) {
+      int fd = openat(dir->underlying_fd, name,
+                      (is_file ? 0 : O_DIRECTORY) | O_RDONLY);
+      if (fd < 0 || fstatat(fd, f->name, &dir->underlying_stats, 0x0)) {
+        free((void *)f->name);
+        free(f);
+        return NULL;
+      }
+      dir->underlying_fd = fd;
+      dir->has_underlying = true;
+    }
+
     assert(IS_DIR(dir->mode));
     /* Sorted insert: */
     size_t cap = dir->dir.capacity;
@@ -210,9 +224,16 @@ static int op_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
   struct path_t p;
   segment_path(path, &p);
   struct ofs_file *d = ofs_file_find(overlay_root, &p);
-  /* TODO: Check underlying FS. */
-  if (!d)
-    return -ENOENT;
+  if (!d) {
+    DIR *dirp = fdopendir(d->underlying_fd);
+    assert(dirp);
+    struct dirent *e = NULL;
+    while ((e = readdir(dirp)))
+      filler(buf, e->d_name, NULL, 0);
+
+    closedir(dirp);
+  }
+
   if (!IS_DIR(d->mode))
     return -ENOTDIR;
 
@@ -222,6 +243,18 @@ static int op_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
   for (size_t i = 0, n = d->dir.size; i < n; i++)
     filler(buf, d->dir.files[i]->name, fill_statbuf(d->dir.files[i], &stbuf),
            0);
+
+  if (d->has_underlying) {
+    /* FIXME: If there is a overlay version, a entry will show up twice! */
+    DIR *dirp = fdopendir(d->underlying_fd);
+    assert(dirp);
+    struct dirent *e = NULL;
+    while ((e = readdir(dirp)))
+      filler(buf, e->d_name, NULL, 0);
+
+    closedir(dirp);
+  }
+
   return 0;
 }
 
@@ -240,6 +273,9 @@ static int op_mkdir(const char *path, mode_t mode) {
   struct ofs_file *f = ofs_file_init(d, false, name);
   if (!f)
     return -errno;
+
+  /* TODO:If there is no overlay parent dir, but a underlying parent dir,
+   * recursively create overlay versions of all entries. */
 
   return 0;
 }
@@ -265,7 +301,7 @@ int main(int argc, const char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  rootfd = open(options.underlying_root, O_DIRECTORY);
+  rootfd = open(options.underlying_root, O_DIRECTORY | O_RDONLY);
   if (rootfd < 0) {
     fprintf(flog, "cannot open %s: %s\n", options.underlying_root,
             strerror(errno));
