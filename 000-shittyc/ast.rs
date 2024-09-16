@@ -37,12 +37,12 @@ pub enum Stmt {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, PartialEq)]
-pub enum Predicate { EQ, NE, LT, LE, GT, GE }
-
-#[allow(dead_code)]
-#[derive(Debug, PartialEq)]
-pub enum BinOp { Add, Sub, Mul, Div, BitwiseAnd, BitwiseOr, BitwiseXOr }
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum BinOp {
+    EQ, NE, LT, LE, GT, GE,
+    Add, Sub, Mul, Div, Mod, BitwiseAnd, BitwiseOr, BitwiseXOr,
+    LogicalAnd, LogicalOr
+}
 
 #[allow(dead_code)]
 #[derive(Debug, PartialEq)]
@@ -53,9 +53,9 @@ pub enum UnaryOp { Neg, LogicalNot, BitwiseNot }
 pub enum Expr {
     Id { sloc: SLoc, typ: Type, name: Rc<str> },
     Int { sloc: SLoc, typ: Type, num: i64 },
-    Cmp {
-        sloc: SLoc, typ: Type, pred: Predicate,
-        lhs: Box<Expr>, rhs: Box<Expr>,
+    Assign {
+        sloc: SLoc, typ: Type, op: Option<BinOp>,
+        lhs: Box<Expr>, rhs: Box<Expr>
     },
     Cast {
         sloc: SLoc, typ: Type, val: Box<Expr>
@@ -81,6 +81,10 @@ pub enum Expr {
     Subscript {
         sloc: SLoc, typ: Type,
         ptr: Box<Expr>, offset: Box<Expr>
+    },
+    Tenary {
+        sloc: SLoc, typ: Type,
+        cond: Box<Expr>, then: Box<Expr>, otherwise: Box<Expr>
     }
 }
 
@@ -89,31 +93,18 @@ impl Display for Expr {
         match self {
             Expr::Id { name, .. } => write!(f, "{}", name),
             Expr::Int { num, .. } => write!(f, "{:#x}", num),
-            Expr::Cmp { pred, lhs, rhs, .. } => write!(f, "({}) {} ({})", lhs,
-                match pred {
-                    Predicate::EQ => "==",
-                    Predicate::NE => "!=",
-                    Predicate::GE => ">=",
-                    Predicate::GT => ">",
-                    Predicate::LE => "<=",
-                    Predicate::LT => "<"
-                }, rhs),
+            Expr::Assign { op: Some(op), lhs, rhs, .. } =>
+                write!(f, "({}) {}= ({})", lhs, Expr::binop_to_str(*op), rhs),
+            Expr::Assign { op: None, lhs, rhs, .. } =>
+                write!(f, "({}) = ({})", lhs, rhs),
             Expr::Cast { typ, val, .. } => write!(f, "({})({})", typ, val),
             Expr::UnaryOp { op, val, .. } => match op {
                 UnaryOp::Neg => write!(f, "-({})", val),
                 UnaryOp::BitwiseNot => write!(f, "~({})", val),
                 UnaryOp::LogicalNot => write!(f, "!({})", val)
             },
-            Expr::BinOp { op, lhs, rhs, .. } => write!(f, "({}) {} ({})", lhs,
-                match op {
-                    BinOp::Add => "+",
-                    BinOp::Sub => "-",
-                    BinOp::Mul => "*",
-                    BinOp::Div => "/",
-                    BinOp::BitwiseAnd => "&",
-                    BinOp::BitwiseOr => "|",
-                    BinOp::BitwiseXOr => "^"
-                }, rhs),
+            Expr::BinOp { op, lhs, rhs, .. } =>
+                write!(f, "({}) {} ({})", lhs, Expr::binop_to_str(*op), rhs),
             Expr::Call { func, args, .. } => {
                 write!(f, "({})(", func)?;
                 for (i, arg) in args.iter().enumerate() {
@@ -123,7 +114,27 @@ impl Display for Expr {
             },
             Expr::Deref { ptr, .. } => write!(f, "*({})", ptr),
             Expr::FieldAccess { obj, field, .. } => write!(f, "({}).{}", obj, &**field),
-            Expr::Subscript { ptr, offset, .. } => write!(f, "({})[{}]", ptr, offset)
+            Expr::Subscript { ptr, offset, .. } => write!(f, "({})[{}]", ptr, offset),
+            Expr::Tenary { cond, then, otherwise, .. } =>
+                write!(f, "({}) ? ({}) : ({})", cond, then, otherwise)
+        }
+    }
+}
+
+impl Expr {
+    fn binop_to_str(op: BinOp) -> &'static str {
+        match op {
+            BinOp::Add => "+", BinOp::Sub => "-",
+            BinOp::Mul => "*", BinOp::Div => "/",
+            BinOp::Mod => "%",
+            BinOp::BitwiseAnd => "&",
+            BinOp::BitwiseOr => "|",
+            BinOp::BitwiseXOr => "^",
+            BinOp::EQ => "==", BinOp::NE => "!=",
+            BinOp::GE => ">=", BinOp::GT => ">",
+            BinOp::LE => "<=", BinOp::LT => "<",
+            BinOp::LogicalOr => "||",
+            BinOp::LogicalAnd => "&&"
         }
     }
 }
@@ -250,7 +261,64 @@ impl Parser {
     }
 
     fn parse_expr(&mut self, lex: &mut Lexer) -> Result<Box<Expr>, Error> {
-        self.parse_final_expr(lex)
+        let expr = self.parse_binary_expr(lex, 0)?;
+        let (sloc, tok) = lex.peek()?;
+        if let Some(op) = match tok {
+            Tok::Assign => Some(None),
+            Tok::AssignAdd => Some(Some(BinOp::Add)),
+            Tok::AssignSub => Some(Some(BinOp::Sub)),
+            _ => None
+        } {
+            lex.next()?;
+            let rhs = self.parse_expr(lex)?;
+            return Ok(Box::new(Expr::Assign {
+                sloc, typ: Type::Unknown, op,
+                lhs: expr, rhs }))
+        }
+
+        if lex.consume_if_next(Tok::QuestionMark)? {
+            let sloc = lex.peek()?.0;
+            let then = self.parse_expr(lex)?;
+            lex.expect_token(Tok::Colon, "tenary expression")?;
+            let otherwise = self.parse_expr(lex)?;
+            return Ok(Box::new(Expr::Tenary {
+                sloc, typ: Type::Unknown, cond: expr, then, otherwise }))
+        }
+        Ok(expr)
+    }
+
+    fn parse_binary_expr(&mut self, lex: &mut Lexer, min_prec: u64) -> Result<Box<Expr>, Error> {
+        fn precedence(tok: Tok) -> Option<(BinOp, u64)> {
+            match tok {
+                Tok::LogicalOr      => Some((BinOp::LogicalOr,  100)),
+                Tok::LogicalAnd     => Some((BinOp::LogicalAnd, 100)),
+                Tok::BitwiseOr      => Some((BinOp::BitwiseOr,  200)),
+                Tok::Ampersand      => Some((BinOp::BitwiseAnd, 200)),
+                Tok::BitwiseXOr     => Some((BinOp::BitwiseXOr, 200)),
+                Tok::Equal          => Some((BinOp::EQ,         300)),
+                Tok::NotEqual       => Some((BinOp::NE,         300)),
+                Tok::Smaller        => Some((BinOp::LT,         400)),
+                Tok::Bigger         => Some((BinOp::GT,         400)),
+                Tok::SmallerOrEqual => Some((BinOp::LE,         400)),
+                Tok::BiggerOrEqual  => Some((BinOp::GT,         400)),
+                Tok::Plus           => Some((BinOp::Add,        600)),
+                Tok::Minus          => Some((BinOp::Sub,        600)),
+                Tok::Star           => Some((BinOp::Mul,        700)),
+                Tok::Divide         => Some((BinOp::Div,        700)),
+                Tok::Modulo         => Some((BinOp::Mod,        700)),
+                _ => None
+            }
+        }
+
+        let mut lhs = self.parse_final_expr(lex)?;
+        while let Some((op, prec)) = precedence(lex.peek()?.1) {
+            if prec < min_prec { break }
+            let (sloc, _) = lex.next()?;
+            let rhs = self.parse_binary_expr(lex, prec + 1)?;
+            lhs = Box::new(Expr::BinOp {
+                sloc, typ: Type::Unknown, op, lhs, rhs });
+        }
+        Ok(lhs)
     }
 
     fn parse_final_expr(&mut self, lex: &mut Lexer) -> Result<Box<Expr>, Error> {
@@ -468,6 +536,14 @@ mod test {
         assert_eq!(
             parse_expr("-*hallo[42]->foo").to_string(),
             "-(*((*((hallo)[0x2a])).foo))");
+
+        assert_eq!(
+            parse_expr("*(int*)foo").to_string(),
+            "*((int32_t*)(foo))");
+
+        assert_eq!(
+            parse_expr("foo | a + b * c + d & bar").to_string(),
+            "((foo) | (((a) + ((b) * (c))) + (d))) & (bar)");
     }
 
     #[test]
