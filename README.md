@@ -54,5 +54,8 @@ Somehow, [the iSH iOS app](https://github.com/ish-app/ish) manages to have a qui
 
 Tags: __*C++*__, __*LLVM*__, __*Compiler*__
 
-A super basic strength reduction as an LLVM pass. Similar setup as with project #6, but this time there is a `run.sh` script as well.
+Similar setup as with project #6, but this time there is a `run.sh` script as well. The pass plugin contains two passes: one is a very simple strength reduction (`x / y -> x >> log2(y)` if `y` is a power of two), the other is actually a de-optimization implemented for fun/practice not actually useful. When it sees the integer formula `y = (x*(x+1))/2` it replaces that by a loop that sums up all numbers from zero to `x` ([known as gaussian summation](https://de.wikipedia.org/wiki/Gau%C3%9Fsche_Summenformel)). LLVM is actually able to reverse that optimization again!
+
+
+
 

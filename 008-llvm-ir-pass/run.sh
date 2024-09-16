@@ -2,9 +2,11 @@
 
 set -e
 
-clang -O0 -S -emit-llvm ./example.c -o ./example.ll
+# clang -O0 -S -emit-llvm ./example.c -o ./example.ll
 
 (cd ./build && make)
 
-opt -load-pass-plugin ./build/libHelloWorld.so -passes=hello-world -S ./example.ll
+opt -load-pass-plugin ./build/libHelloWorld.so -passes=hello-world -S ./example.ll > out.ll
+
+bat out.ll
 
