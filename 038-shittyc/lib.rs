@@ -32,14 +32,15 @@ mod tests {
         let buf = test_src.as_bytes().to_vec();
         let mut lex = Lexer::new(std::path::Path::new("text.c"), &buf);
         let mut p = Parser::new();
-        let f = p.parse_function(&mut lex).unwrap();
 
         {
             let mut test_file = std::fs::File::create(&test_dot_s).expect("assembly dump file");
             {
                 let mut cg = CodeGen::new(Box::new(&mut test_file));
                 cg.header().expect("write header");
-                cg.write(f.as_ref()).expect("write function");
+                while let Some(f) = p.parse_function(&mut lex).unwrap() {
+                    cg.write(f.as_ref()).expect("write function");
+                }
             }
             test_file.flush().expect("flush");
         }
@@ -63,7 +64,6 @@ mod tests {
             long zero() { return 0i64; }
             ", "
             #include <stdlib.h>
-            #include <stdio.h>
 
             extern long zero();
 
@@ -80,12 +80,35 @@ mod tests {
             long add(long a, long b) { return a + b; }
             ", "
             #include <stdlib.h>
-            #include <stdio.h>
 
             extern long add(long a, long b);
 
             int main() { return add(1, 2) == 3 ? EXIT_SUCCESS : EXIT_FAILURE; }
             ");
+        let status = std::process::Command::new("qemu-riscv64")
+            .arg(test_binary).status().unwrap();
+        assert!(status.success());
+    }
+
+    #[test]
+    fn if_else() {
+        let test_binary = prepare("if-else", "
+            long min(long a, long b) {
+              if (a < b)
+                return a;
+              return b;
+            }
+            ", "
+            #include <stdlib.h>
+            #include <assert.h>
+
+            long min(long a, long b);
+
+            int main() {
+              assert(min(1, 2) == 1);
+              assert(min(6, 5) == 5);
+              return EXIT_SUCCESS;
+            }");
         let status = std::process::Command::new("qemu-riscv64")
             .arg(test_binary).status().unwrap();
         assert!(status.success());

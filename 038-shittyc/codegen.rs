@@ -60,14 +60,16 @@ impl Display for Reg {
 
 pub struct CodeGen<'a> {
     regs: HashMap<Rc<Decl>, Reg>,
-    out: Box<dyn std::io::Write + 'a>
+    out: Box<dyn std::io::Write + 'a>,
+    label_cntr: usize,
 }
 
 impl<'a> CodeGen<'a> {
     pub fn new(out: Box<dyn std::io::Write + 'a>) -> CodeGen<'a> {
         CodeGen {
             regs: HashMap::new(),
-            out
+            out,
+            label_cntr: 0
         }
     }
 
@@ -87,6 +89,7 @@ impl<'a> CodeGen<'a> {
         assert!(fun.locals.len() < Reg::caller_save().len());
 
         self.regs.clear();
+        self.label_cntr = 0;
         for (i, reg) in (0..fun.args.len()).zip(Reg::argument_regs().iter()) {
             let arg = &fun.locals[i];
             assert!(arg.is_argument);
@@ -176,6 +179,14 @@ impl<'a> CodeGen<'a> {
                 self.expr(val.as_ref(), Reg::retval_reg(), scratch)?;
                 write!(self.out, "\tret\n")
             },
+            Stmt::If { cond, then, otherwise: None, .. } => {
+                let id = self.label_cntr;
+                self.label_cntr += 1;
+                self.expr(cond.as_ref(), scratch[0], scratch)?;
+                write!(self.out, "\tbeq {}, zero, .BB{}\n", scratch[0], id)?;
+                self.stmt(then.as_ref(), scratch)?;
+                write!(self.out, ".BB{}:\n", id)
+            },
             _ => unimplemented!()
         }
     }
@@ -191,7 +202,7 @@ mod test {
         let buf = input.as_bytes().to_vec();
         let mut lex = Lexer::new(std::path::Path::new("text.c"), &buf);
         let mut p = Parser::new();
-        p.parse_function(&mut lex).unwrap()
+        p.parse_function(&mut lex).unwrap().unwrap()
     }
 
     fn codegen(input: &str) -> String {

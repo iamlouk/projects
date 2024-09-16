@@ -233,7 +233,11 @@ impl Parser {
         Err(Error::UnresolvedSymbol(sloc.clone(), name))
     }
 
-    pub fn parse_function(&mut self, lex: &mut Lexer) -> Result<Rc<Function>, Error> {
+    pub fn parse_function(&mut self, lex: &mut Lexer) -> Result<Option<Rc<Function>>, Error> {
+        if lex.peek()?.1 == Tok::EndOfFile {
+            return Ok(None)
+        }
+
         let is_static = lex.consume_if_next(Tok::Static)?;
         let retty = self.parse_type(lex)?;
         let (sloc, name) = lex.expect_id("function name")?;
@@ -269,10 +273,10 @@ impl Parser {
         self.globals.insert(name.clone(), decl.clone());
 
         if lex.consume_if_next(Tok::SemiColon)? {
-            return Ok(Rc::new(Function {
+            return Ok(Some(Rc::new(Function {
                 name, sloc, retty, args,
                 body: None, is_static, locals: Vec::new()
-            }))
+            })))
         }
 
         self.current_function = Some(Box::new(Function {
@@ -285,7 +289,7 @@ impl Parser {
         f.body = Some(body);
         let f = Rc::new(*f);
         decl.func.replace(Some(f.clone()));
-        Ok(f)
+        Ok(Some(f))
     }
 
     fn parse_stmt(&mut self, lex: &mut Lexer, ident: u8) -> Result<Box<Stmt>, Error> {
@@ -321,6 +325,7 @@ impl Parser {
             while lex.peek()?.1 != Tok::RBraces {
                 stmts.push(*self.parse_stmt(lex, ident + 1)?);
             }
+            lex.next()?;
             return Ok(Box::new(Stmt::Compound { sloc, ident, stmts }))
         }
 
@@ -750,7 +755,7 @@ mod test {
         let buf = input.as_bytes().to_vec();
         let mut lex = Lexer::new(std::path::Path::new("text.c"), &buf);
         let mut p = Parser::new();
-        p.parse_function(&mut lex).unwrap()
+        p.parse_function(&mut lex).unwrap().unwrap()
     }
 
     #[test]
