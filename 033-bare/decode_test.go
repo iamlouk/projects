@@ -144,3 +144,20 @@ func TestDecodeInt(t *testing.T) {
 		}
 	}
 }
+
+func TestStruct(t *testing.T) {
+	s := struct {
+		Foo  uint
+		Bar  int
+		Buzz string
+	}{}
+	r := bytes.NewBuffer([]byte{0xFF, 0x01, 0xFD, 0x03, 0x04, 0x42, 0x41, 0x52, 0x45})
+
+	if err := Decode(r, &s); err != nil {
+		t.Fatal(err)
+	}
+
+	if s.Foo != 255 || s.Bar != -255 || s.Buzz != "BARE" {
+		t.Fatalf("expected a different struct: %#v", s)
+	}
+}

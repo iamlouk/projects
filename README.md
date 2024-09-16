@@ -195,3 +195,9 @@ Tags: __*Base64*__, __*Encoding*__
 
 A mini-benchmark of base64 encoding in different languages.
 
+### 033: [BARE](./033-bare/)
+
+Tags: __*Go*__, __*Encoding*__
+
+Some fun (nothing useful) with implementing parts of the [BARE](https://datatracker.ietf.org/doc/draft-devault-bare/) message format and its schema language.
+

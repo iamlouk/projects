@@ -79,7 +79,7 @@ func decodeValue(r io.ByteReader, dst reflect.Value) error {
 	case reflect.Slice:
 		n, err := DecodeUInt(r)
 		if err != nil {
-			return errors.New("expected a length")
+			return fmt.Errorf("expected a error: %w", err)
 		}
 		sliceVal := reflect.MakeSlice(dst.Type().Elem(), int(n), int(n))
 		for i := range int(n) {
@@ -89,6 +89,35 @@ func decodeValue(r io.ByteReader, dst reflect.Value) error {
 		}
 
 		dst.Set(sliceVal)
+		return nil
+	case reflect.Struct:
+		fields := dst.NumField()
+		for i := range fields {
+			field := dst.Field(i)
+			tag := dst.Type().Field(i).Tag
+			skip := tag.Get("bare") == "-skip-"
+			if skip {
+				continue
+			}
+			if err := decodeValue(r, field); err != nil {
+				return err
+			}
+		}
+		return nil
+	case reflect.String:
+		n, err := DecodeUInt(r)
+		if err != nil {
+			return fmt.Errorf("expected a error: %w", err)
+		}
+		bytes := make([]byte, 0, n)
+		for range n {
+			b, err := r.ReadByte()
+			if err != nil {
+				return err
+			}
+			bytes = append(bytes, b)
+		}
+		dst.SetString(string(bytes))
 		return nil
 	default:
 		return fmt.Errorf("unsupported type for BARE: %s", dst.Type().Name())
