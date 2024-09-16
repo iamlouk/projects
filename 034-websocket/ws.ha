@@ -359,9 +359,7 @@ export fn main() void = {
 			// a wsconn will be created later.
 			append(pollfds, poll::pollfd {
 				fd = fd,
-				events = (poll::event::POLLIN | poll::event::POLLPRI |
-					poll::event::POLLOUT | poll::event::POLLERR |
-					poll::event::POLLHUP),
+				events = (poll::event::POLLIN | poll::event::POLLPRI),
 				revents = 0,
 			});
 			append(connections, null);
