@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{fmt::Display, rc::Rc};
 
 use crate::{common::*, lex::{Lexer, Tok}};
 
@@ -46,12 +46,22 @@ pub enum BinOp { Add, Sub, Mul, Div, BitwiseAnd, BitwiseOr, BitwiseXOr }
 
 #[allow(dead_code)]
 #[derive(Debug, PartialEq)]
+pub enum UnaryOp { Neg, LogicalNot, BitwiseNot }
+
+#[allow(dead_code)]
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     Id { sloc: SLoc, typ: Type, name: Rc<str> },
     Int { sloc: SLoc, typ: Type, num: i64 },
     Cmp {
         sloc: SLoc, typ: Type, pred: Predicate,
         lhs: Box<Expr>, rhs: Box<Expr>,
+    },
+    Cast {
+        sloc: SLoc, typ: Type, val: Box<Expr>
+    },
+    UnaryOp {
+        sloc: SLoc, typ: Type, op: UnaryOp, val: Box<Expr>
     },
     BinOp {
         sloc: SLoc, typ: Type, op: BinOp,
@@ -68,6 +78,54 @@ pub enum Expr {
         sloc: SLoc, typ: Type,
         obj: Box<Expr>, field: Rc<str>,
     },
+    Subscript {
+        sloc: SLoc, typ: Type,
+        ptr: Box<Expr>, offset: Box<Expr>
+    }
+}
+
+impl Display for Expr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expr::Id { name, .. } => write!(f, "{}", name),
+            Expr::Int { num, .. } => write!(f, "{:#x}", num),
+            Expr::Cmp { pred, lhs, rhs, .. } => write!(f, "({}) {} ({})", lhs,
+                match pred {
+                    Predicate::EQ => "==",
+                    Predicate::NE => "!=",
+                    Predicate::GE => ">=",
+                    Predicate::GT => ">",
+                    Predicate::LE => "<=",
+                    Predicate::LT => "<"
+                }, rhs),
+            Expr::Cast { typ, val, .. } => write!(f, "({})({})", typ, val),
+            Expr::UnaryOp { op, val, .. } => match op {
+                UnaryOp::Neg => write!(f, "-({})", val),
+                UnaryOp::BitwiseNot => write!(f, "~({})", val),
+                UnaryOp::LogicalNot => write!(f, "!({})", val)
+            },
+            Expr::BinOp { op, lhs, rhs, .. } => write!(f, "({}) {} ({})", lhs,
+                match op {
+                    BinOp::Add => "+",
+                    BinOp::Sub => "-",
+                    BinOp::Mul => "*",
+                    BinOp::Div => "/",
+                    BinOp::BitwiseAnd => "&",
+                    BinOp::BitwiseOr => "|",
+                    BinOp::BitwiseXOr => "^"
+                }, rhs),
+            Expr::Call { func, args, .. } => {
+                write!(f, "({})(", func)?;
+                for (i, arg) in args.iter().enumerate() {
+                    write!(f, "{}{}", if i == 0 {""} else {", "}, arg)?;
+                }
+                write!(f, ")")
+            },
+            Expr::Deref { ptr, .. } => write!(f, "*({})", ptr),
+            Expr::FieldAccess { obj, field, .. } => write!(f, "({}).{}", obj, &**field),
+            Expr::Subscript { ptr, offset, .. } => write!(f, "({})[{}]", ptr, offset)
+        }
+    }
 }
 
 pub struct Parser {}
@@ -198,11 +256,31 @@ impl Parser {
     fn parse_final_expr(&mut self, lex: &mut Lexer) -> Result<Box<Expr>, Error> {
         let (sloc, tok) = lex.next()?;
         let mut expr = match tok {
-            Tok::LParen => {
-                let res = self.parse_expr(lex)?;
-                lex.expect_token(Tok::RParen, "closing parenthesis")?;
-                res
-            }
+            Tok::Minus => Box::new(Expr::UnaryOp {
+                sloc, typ: Type::Unknown, op: UnaryOp::Neg,
+                val: self.parse_final_expr(lex)? }),
+            Tok::LogicalNot => Box::new(Expr::UnaryOp {
+                sloc, typ: Type::Unknown, op: UnaryOp::LogicalNot,
+                val: self.parse_final_expr(lex)? }),
+            Tok::BitwiseNot => Box::new(Expr::UnaryOp {
+                sloc, typ: Type::Unknown, op: UnaryOp::BitwiseNot,
+                val: self.parse_final_expr(lex)? }),
+            Tok::Star => Box::new(Expr::Deref {
+                sloc, typ: Type::Unknown,
+                ptr: self.parse_final_expr(lex)? }),
+            Tok::LParen => match self.parse_type(lex) {
+                Ok(typ) => {
+                    lex.expect_token(Tok::RParen, "cast expression")?;
+                    Box::new(Expr::Cast { sloc, typ, val: self.parse_final_expr(lex)? })
+                },
+                Err(Error::ExpectedType(sloc, tok)) => {
+                    lex.unread(sloc, tok);
+                    let res = self.parse_expr(lex)?;
+                    lex.expect_token(Tok::RParen, "closing parenthesis")?;
+                    res
+                },
+                Err(e) => return Err(e)
+            },
             Tok::IntLit(n) => Box::new(Expr::Int {
                 sloc, num: n,
                 typ: Type::Int { bits: 64, signed: true }
@@ -219,7 +297,7 @@ impl Parser {
                     let field = lex.expect_id("field name")?.1;
                     Box::new(Expr::FieldAccess {
                         sloc, typ: Type::Unknown, obj: expr, field })
-                }
+                },
                 Tok::Arrow => {
                     let (sloc, _) = lex.next()?;
                     let field = lex.expect_id("field name")?.1;
@@ -229,10 +307,10 @@ impl Parser {
                         obj: Box::new(Expr::Deref { sloc, typ: Type::Unknown, ptr: expr }),
                         field
                     })
-                }
+                },
                 Tok::LParen => {
-                    let mut args: Vec<Expr> = vec![];
                     let (sloc, _) = lex.next()?;
+                    let mut args: Vec<Expr> = vec![];
                     loop {
                         let arg = self.parse_expr(lex)?;
                         args.push(*arg);
@@ -248,7 +326,14 @@ impl Parser {
                         sloc, typ: Type::Unknown,
                         func: expr, args,
                     })
-                }
+                },
+                Tok::LBracket => {
+                    let (sloc, _) = lex.next()?;
+                    let offset = self.parse_expr(lex)?;
+                    lex.expect_token(Tok::RBracket, "closing subscript bracket")?;
+                    Box::new(Expr::Subscript {
+                        sloc, typ: Type::Unknown, ptr: expr, offset })
+                },
                 _ => break,
             }
         }
@@ -354,7 +439,7 @@ impl Parser {
 
 #[cfg(test)]
 mod test {
-    use std::{any::TypeId, assert_matches::assert_matches};
+    use std::assert_matches::assert_matches;
     use super::*;
 
     fn parse_type(input: &str) -> Type {
@@ -369,6 +454,20 @@ mod test {
         let mut lex = Lexer::new(std::path::Path::new("text.c"), &buf);
         let mut p = Parser {};
         p.parse_function(&mut lex).unwrap()
+    }
+
+    fn parse_expr(input: &str) -> Box<Expr> {
+        let buf = input.as_bytes().to_vec();
+        let mut lex = Lexer::new(std::path::Path::new("text.c"), &buf);
+        let mut p = Parser {};
+        p.parse_expr(&mut lex).unwrap()
+    }
+
+    #[test]
+    fn some_final_exprs() {
+        assert_eq!(
+            parse_expr("-*hallo[42]->foo").to_string(),
+            "-(*((*((hallo)[0x2a])).foo))");
     }
 
     #[test]
