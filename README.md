@@ -239,6 +239,12 @@ Tags: __*Chip-8*__, __*Rust*__, __*Emulator*__
 
 A [Chip-8](http://devernay.free.fr/hacks/chip8/C8TECH10.HTM) emulator for retro games in rust. The emulator logic is separated from the UI, there is a `crossterm`-based terminal UI. Tetris and [this test ROM](https://github.com/corax89/chip8-test-rom/tree/master) work. To play, run: `cd ./040-chip8/ && cargo run -- ./roms/tetris.ch8`. Another UI in a sub-crate provides a WASM based browser interface.
 
+## 041: [MD2HTML](./041-md2html/)
+
+Tags: __*JS*__, __*Deno*__, __*Markdown*__
+
+A extremely simple and shitty markdown subset parser and transpiler targeting HTML.
+
 ## Future Ideas:
 
 - A REDIS clone (using epoll etc), maybe in Rust?
@@ -248,7 +254,6 @@ A [Chip-8](http://devernay.free.fr/hacks/chip8/C8TECH10.HTM) emulator for retro 
 - A websocket-based shared canvas for [louknr.net](https://louknr.net).
 - A super super simple linker? (for ELF, but with only the most basic features possible?)
 - A simplified make clone?
-- A simple markdown->HTML transpiler?
 - Something like [simdjson](https://github.com/simdjson/simdjson) but with AArch64 SVE?
 - Something like a compressed bitmap ([see here](https://github.com/RoaringBitmap/RoaringBitmap))?
 - A mini OS for the RISC-V virt `QEMU` platform?

@@ -1,11 +1,11 @@
 export interface LanguageDesc {
-  keywords: RegExp;
-  comments: RegExp;
-  constants: RegExp;
-  operators: RegExp;
-  types: RegExp;
-  strings: RegExp;
-  identifier: RegExp;
+  keywords?: RegExp;
+  comments?: RegExp;
+  constants?: RegExp;
+  operators?: RegExp;
+  types?: RegExp;
+  strings?: RegExp;
+  identifier?: RegExp;
 }
 
 export enum Kind {
@@ -25,17 +25,33 @@ export const languageC: LanguageDesc = {
   identifier: /^\w[\d\w\_]*/
 };
 
+export const languageUnknown: LanguageDesc = {
+  comments: /^(\/\/[^\n$]*|#[^\n$]*)/,
+  constants: /^(true|false|(\d[\d\w_\.]*)|([A-Z_][A-Z_0-9]*))(?=[^A-Za-z_0-9])/,
+  strings: /^("(\\"|[^"])*"|'(\\'|[^'])*'|`(\\`|[^`])*`)/,
+  identifier: /^\w[\d\w\_]*/
+};
+
 export function categorize(source: string, lang: LanguageDesc): Part[][] {
   let lines: Part[][] = [];
-  const checks: { kind: Kind, re: RegExp }[] = [
-    { kind: Kind.KEYWORD,    re: lang.keywords  },
-    { kind: Kind.COMMENT,    re: lang.comments  },
-    { kind: Kind.OPERATOR,   re: lang.operators  },
-    { kind: Kind.CONSTANT,   re: lang.constants  },
-    { kind: Kind.STRING,     re: lang.strings    },
-    { kind: Kind.TYPE,       re: lang.types      },
-    { kind: Kind.IDENTIFIER, re: lang.identifier },
-  ];
+  const checks: { kind: Kind, re: RegExp }[] = [];
+  for (let key in lang) {
+    let kind = ({
+      "keywords": Kind.KEYWORD,
+      "comments": Kind.COMMENT,
+      "operators": Kind.OPERATOR,
+      "constants": Kind.CONSTANT,
+      "strings": Kind.STRING,
+      "types": Kind.TYPE,
+      "identifier": Kind.IDENTIFIER
+    })[key];
+    if (!kind)
+      throw new Error(`Unknown language desc. key: '${key}'`);
+    let re = (lang as any)[key] as RegExp;
+    if (!(re instanceof RegExp))
+      throw new Error(`Not a regular expression in language desc. key: '${key}'`);
+    checks.push({ kind, re });
+  }
 
   for (let line of source.split('\n')) {
     let i = 0, j = 0, parts: Part[] = [];
@@ -84,7 +100,7 @@ const escape = (unsafe: string): string =>
       .replace(/'/g, "&#039;");
 
 // TODO: Escape any HTML sequences?!
-export function tohtml(lines: Part[][]): string {
+export function tohtml(lang: string, lines: Part[][]): string {
   const classes = {
     [Kind.KEYWORD]: "kw",
     [Kind.COMMENT]: "comment",
@@ -95,7 +111,7 @@ export function tohtml(lines: Part[][]): string {
     [Kind.IDENTIFIER]: "id"
   };
 
-  let text: string[] = [`<div class="highlight"><div>`];
+  let text: string[] = [`<div class="highlight" data-lang="${lang}"><div>`];
   for (let i = 0; i < lines.length; i += 1)
     text.push(`<b class="ln">${(i + 1)}</b>`);
   text.push(`</div>\n<div><pre>\n`);
@@ -119,11 +135,12 @@ export function tohtml(lines: Part[][]): string {
 }
 
 if (import.meta.main) {
-  const tempalte: string = await Deno.readTextFile('./test-template.html');
+  // const tempalte: string = await Deno.readTextFile('./test-template.html');
+  const tempalte: string = '{{REPLACEME}}'
   const data = await Deno.readAll(Deno.stdin);
   const code = (new TextDecoder()).decode(data);
 
-  let highlighted = tohtml(categorize(code, languageC));
+  let highlighted = tohtml('C', categorize(code, languageC));
   let res = tempalte.replace('{{REPLACEME}}', highlighted);
   await Deno.writeAll(Deno.stdout, (new TextEncoder()).encode(res));
 }

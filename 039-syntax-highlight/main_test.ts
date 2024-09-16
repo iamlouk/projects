@@ -32,8 +32,8 @@ Deno.test(function comment1() {
 
 Deno.test(function comment2() {
   assertEquals(
-    tohtml(categorize('// hello world', languageC)),
-`<div class="highlight"><div><b class="ln">1</b></div>
+    tohtml('C', categorize('// hello world', languageC)),
+`<div class="highlight" data-lang="C"><div><b class="ln">1</b></div>
 <div><pre>
 <b class="comment">// hello world</b>
 </pre></div></div>
