@@ -44,7 +44,7 @@ Tags: __*Clang*__, __*LLVM*__, __*Compiler*__
 
 This project was more about building LLVM (14.0) and looking into the build system than the plugin itself. LLVM was build like this: `cmake -G Ninja -DLLVM_ENABLE_PROJECTS="clang;compiler-rt;lld" -DLLVM_TARGETS_TO_BUILD="RISCV" -DCMAKE_INSTALL_PREFIX="/opt/llvm" -DCMAKE_BUILD_TYPE="DEBUG" -DLLVM_OPTIMIZED_TABLEGEN="ON" ../llvm` (with `lld` as a linker and `ninja -j 1` while linking because otherwise, 16GB of main memory are not enough). Build the plugin like this: `cmake -G Ninja -DLLVM_DIR=../../../llvm/llvm-project/llvm -DClang_DIR=../../../llvm/llvm-project/clang ..` (from `./006-clang-plugin/build`). The plugin warns when a variable is assigned to itself (in its own statement).
 
-### 007: [Bytecode-VM comparing threaded jumps and a jump table](./007-mini-vm)
+### 007: [Bytecode-VM comparing threaded jumps and a jump table](./007-mini-vm) *(semi-finished)*
 
 Tags: __*C*__, __*performance*__
 
@@ -67,4 +67,10 @@ This will be a multi-day project. The first step was a lexer and a simple parser
 Tags: __*CAs*__, __*Python*__, __*GPUs*__
 
 I accidentally stumbled across [Taichi Lang](https://github.com/taichi-dev/taichi/) and was fascinated by it. As someone interested in compilers and GPU programming, the way this project works is really cool. It uses python's reflection/inspection/meta-programming in order to embed itself as a DSL into regular python code and JITs kernels. The way it works becomes clearer and clearer the more you read up on the limitations and design choices of the language. If it had proper reduction support it could be very very useful for a lot of things I did in C before. In order to play around with it I wrote a small cellular automata.
+
+### 011: [Jump'n'Run](./011-jump-n-run) *(unfinished)*
+
+Tags: __*HTML*__, __*JS*__, __*Game*__
+
+A simple Jump&Run in plain vanilla JS using HTML5 canvas. Images from [this asset pack](https://jesse-m.itch.io/jungle-pack) where used.
 
