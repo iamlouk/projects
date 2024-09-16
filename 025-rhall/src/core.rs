@@ -1,9 +1,9 @@
 use std::{
     fmt::{Debug, Display},
-    rc::Rc,
+    rc::Rc, cell::RefCell,
 };
 
-use crate::{ast::NodeRef, lex, eval::Env};
+use crate::{lex, eval::Env, ast::Node};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SLoc {
@@ -23,7 +23,7 @@ pub enum Error {
         found: lex::Tok,
     },
     UndefinedValue(Rc<str>),
-    Uncallable(NodeRef),
+    Uncallable(SLoc, String),
     ExpectedType(SLoc),
     TypeError(SLoc, String)
 }
@@ -66,7 +66,7 @@ pub enum Value {
     Int(i64),
     Str(Rc<str>),
     Type(Option<Rc<str>>, Rc<Type>),
-    Lambda(Vec<(Rc<str>, Rc<Type>)>, NodeRef),
+    Lambda(Vec<(Rc<str>, Rc<Type>)>, Rc<RefCell<Node>>),
 }
 
 impl Value {
