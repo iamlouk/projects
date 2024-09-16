@@ -2,6 +2,7 @@
 a.out
 *.o
 *.so
+*.bin
 test
 
 /*/target

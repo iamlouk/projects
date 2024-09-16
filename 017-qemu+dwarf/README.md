@@ -1,6 +1,10 @@
 
 This project uses [libelfin](https://github.com/aclements/libelfin), a ELF and DWARF parser library. It only supports DWARF up to version 4, so one needs to compile code with `-gdwarf-4`. The patch below helps a bit by allowing libraries or object files with DWARF version 5 to be mixed into the binary. Parsing ELF is not that hard, I wrote a simple ELF parser myself, but DWARF is a big mess and that library is great!
 
+Because QEMU kills the `plugin_exit` callback thread, the `QEMU_EXIT_ADDRESS` environment variable is set
+to the executed binaries `_exit` functions address. When you change the example, take care of changing it as well!
+Easy way to find it: `/opt/riscv/bin/riscv64-unknown-linux-gnu-objdump -d ./example/hello-world | grep "<_exit>:"`.
+
 ```diff
 diff --git a/dwarf/dwarf.cc b/dwarf/dwarf.cc
 index 2465eef..eeab804 100644

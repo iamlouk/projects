@@ -3,7 +3,7 @@
 
 int main(int argc, const char *argv[]) {
 	int seed = argc > 1 ? atoi(argv[1]) : 123;
-	int n    = argc > 2 ? atoi(argv[2]) : 12;
+	int n    = argc > 2 ? atoi(argv[2]) : 10;
 	int m    = argc > 3 ? atoi(argv[3]) : 42;
 
 	srand(seed);
@@ -14,9 +14,9 @@ int main(int argc, const char *argv[]) {
 	// Initialize...
 	for (int i = 0; i < n; i++)
 		for (int j = 0; j < m; j++)
-			A[i * m + j] = (float)(rand() % 100 - 50);
+			A[i * m + j] = (float)(rand() % 10 - 5) * 0.1;
 	for (int j = 0; j < m; j++)
-		b[j] = (float)(rand() % 50 - 25);
+		b[j] = (float)(rand() % 10 - 5) * 0.1;
 	for (int i = 0; i < n; i++)
 		c[i] = 0.;
 
