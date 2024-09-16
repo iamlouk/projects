@@ -26,6 +26,7 @@ pub enum Tok<'input> {
     RightCurly(Pos),
     LeftSquare(Pos),
     RightSquare(Pos),
+    Lambda(Pos),
 
     // Operators:
     Plus(Pos),
@@ -125,6 +126,7 @@ impl<'input> Iterator for Lexer<'input> {
             '}' => Some(Tok::RightCurly(pos)),
             '[' => Some(Tok::LeftSquare(pos)),
             ']' => Some(Tok::RightSquare(pos)),
+            '\\' => Some(Tok::Lambda(pos)),
 
             '=' => match self.chars.peek() {
                 Some(&'=') => { self.pos += 1; self.chars.next(); Some(Tok::Equal(pos)) },
@@ -179,11 +181,11 @@ impl<'input> Iterator for Lexer<'input> {
                 match contains_dot {
                     true => match text.parse::<f64>() {
                         Ok(x) => Some(Tok::Real(pos, x)),
-                        Err(e) => Some(Tok::Error(pos, format!("invalid real literall: {}", e))),
+                        Err(e) => Some(Tok::Error(pos, format!("invalid real literal: {}", e))),
                     },
                     false => match i64::from_str_radix(text, base) {
                         Ok(x) => Some(Tok::Int(pos, x)),
-                        Err(e) => Some(Tok::Error(pos, format!("invalid integer literall: {}", e))),
+                        Err(e) => Some(Tok::Error(pos, format!("invalid integer literal: {}", e))),
                     }
                 }
             },
@@ -196,11 +198,27 @@ impl<'input> Iterator for Lexer<'input> {
                         Some('"') => break,
                         Some('\\') => unimplemented!(),
                         Some(_) => continue,
-                        None => return Some(Tok::Error(self.getpos(), format!("unexpexted EOF in string literall")))
+                        None => return Some(Tok::Error(self.getpos(),
+                            format!("unexpected EOF in string literal")))
                     }
                 }
 
                 Some(Tok::Str(pos, &self.input[start..(self.pos - 1)]))
+            },
+
+            '`' => {
+                let start = self.pos;
+                loop {
+                    self.pos += 1;
+                    match self.chars.next() {
+                        Some('`') => break,
+                        Some(_) => continue,
+                        None => return Some(Tok::Error(self.getpos(),
+                            format!("unexpected EOF in id")))
+                    }
+                }
+
+                Some(Tok::Id(pos, &self.input[start..(self.pos - 1)]))
             },
 
             'a'..='z' | 'A'..='Z' => {
@@ -219,16 +237,17 @@ impl<'input> Iterator for Lexer<'input> {
                 }
 
                 match &self.input[start..self.pos] {
-                    "and" => Some(Tok::And(pos)),
-                    "or" => Some(Tok::Or(pos)),
-                    "let" => Some(Tok::Let(pos)),
-                    "in" => Some(Tok::In(pos)),
-                    "if" => Some(Tok::If(pos)),
-                    "then" => Some(Tok::Then(pos)),
-                    "else" => Some(Tok::Else(pos)),
-                    "true" => Some(Tok::Bool(pos, true)),
+                    "and"   => Some(Tok::And(pos)),
+                    "or"    => Some(Tok::Or(pos)),
+                    "let"   => Some(Tok::Let(pos)),
+                    "in"    => Some(Tok::In(pos)),
+                    "if"    => Some(Tok::If(pos)),
+                    "then"  => Some(Tok::Then(pos)),
+                    "else"  => Some(Tok::Else(pos)),
+                    "true"  => Some(Tok::Bool(pos, true)),
                     "false" => Some(Tok::Bool(pos, false)),
-                    id => Some(Tok::Id(pos, id))
+                    "L"     => Some(Tok::Lambda(pos)),
+                    id      => Some(Tok::Id(pos, id))
                 }
             },
             _ => Some(Tok::Error(self.getpos(), format!("unexpected character: {:?}", c)))

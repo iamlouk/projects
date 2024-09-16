@@ -6,9 +6,8 @@ use crate::lexer::{Pos};
 #[derive(Debug)]
 pub enum Type {
     Unkown,
-    Unresolved(Rc<String>),
-    Error,
-
+    Unresolved(Box<Node>),
+    Type,
     Int,
     Real,
     Bool,
@@ -16,7 +15,31 @@ pub enum Type {
     Lambda(Vec<Type>, Box<Type>)
 }
 
-#[derive(Debug)]
+impl Type {
+    pub fn to_string(&self, out: &mut String) -> std::fmt::Result {
+        match self {
+            Self::Unkown => write!(out, "<?>"),
+            Self::Unresolved(name) => write!(out, "<{:?}>", name),
+            Self::Type => write!(out, "Type"),
+            Self::Int => write!(out, "Int"),
+            Self::Real => write!(out, "Real"),
+            Self::Bool => write!(out, "Bool"),
+            Self::Str => write!(out, "Str"),
+            Self::Lambda(argtypes, rettype) => {
+                out.push_str("lambda:(");
+                for i in 0..argtypes.len() {
+                    if i != 0 { out.push_str(", "); }
+                    argtypes[i].to_string(out)?;
+                }
+                out.push_str(") => ");
+                rettype.to_string(out)?;
+                Ok(())
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum BinOp {
     And, Or,
     Eq, NotEq,
@@ -51,7 +74,10 @@ impl Node {
         match self {
             Self::Int(_, x) => write!(out, "{:?}", x),
             Self::Real(_, x) => write!(out, "{:?}", x),
-            Self::Id(_, x) => write!(out, "id:{}", x),
+            Self::Bool(_, true) => write!(out, "true"),
+            Self::Bool(_, false) => write!(out, "false"),
+            Self::Str(_, str) => write!(out, "{:?}", str),
+            Self::Id(_, x) => write!(out, "{}", x),
             Self::BinOp(_, op, lhs, rhs) => {
                 out.push('(');
                 lhs.to_string(out)?;
@@ -60,14 +86,26 @@ impl Node {
                     BinOp::Eq => " == ", BinOp::NotEq => " != ",
                     BinOp::Lt => " < ", BinOp::LtEq => " <= ",
                     BinOp::Gt => " > ", BinOp::GtEq => " >= ",
-                    BinOp::Add => " + ", BinOp::Sub => " - ", BinOp::Mul => " * ", BinOp::Div => " / "
+                    BinOp::Add => " + ", BinOp::Sub => " - ",
+                    BinOp::Mul => " * ", BinOp::Div => " / "
                 });
                 rhs.to_string(out)?;
                 out.push(')');
                 Ok(())
             },
+            Self::Call(_, func, args) => {
+                out.push('(');
+                func.to_string(out)?;
+                out.push_str(")(");
+                for i in 0..args.len() {
+                    if i != 0 { out.push_str(", "); }
+                    args[i].to_string(out)?;
+                }
+                out.push(')');
+                Ok(())
+            },
             Self::LetIn(_, id, ea, eb) => {
-                write!(out, "\nlet id:{} = ", id)?;
+                write!(out, "\nlet {} = ", id)?;
                 ea.to_string(out)?;
                 out.push_str(" in ");
                 eb.to_string(out)
@@ -82,7 +120,18 @@ impl Node {
                 out.push_str(")");
                 Ok(())
             },
-            _ => unimplemented!()
+            Self::Lambda(_, args, body) => {
+                out.push_str("(");
+                for i in 0..args.len() {
+                    if i != 0 { out.push_str(", "); }
+                    write!(out, "{}: ", args[i].0.as_str())?;
+                    args[i].1.to_string(out)?;
+                }
+                out.push_str(") -> (");
+                body.to_string(out)?;
+                out.push_str(")");
+                Ok(())
+            }
         }
     }
 }
