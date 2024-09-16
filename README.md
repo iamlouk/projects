@@ -209,6 +209,11 @@ Tags: __*C*__, __*FUSE*__
 
 In a past job, I worked with union/overlay file systems like [overlayfs](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/fs/overlayfs). They are extremely useful sometimes. This project is a extremely incomplete (at the time of writing, creating and deleting files and directories works, but no read/write of actual files) and shitty version of such a file system where you have a underlying and a overlay directory. The underlying one is never changed, all changes are represented in the overlay dir.
 
+### 036: [A B-Tree in HARE](./036-b-tree/)
+
+Tags: __*Hare*__, __*B-Tree*__
+
+Working B-Tree with variable key and value sizes, but currently without persistence or deletion. I plan on maybe extending this impl. to a basic persistent key-value store. There are memory leaks etc. in the currnet impl and I know that it is shit, but it was fun to implement a copy-on-write B-Tree and I designed it so that it can be extended for persistence etc.. Also, node-splitting and all of that works.
 
 ## Future Ideas:
 
@@ -219,4 +224,7 @@ In a past job, I worked with union/overlay file systems like [overlayfs](https:/
 - A B-Tree or a persistent key-value store
 - A Hare libgccjit backend using [hare::parse](https://docs.harelang.org/hare/parse) as frontend?
 - A websocket-based shared canvas for [louknr.net](https://louknr.net).
+- A super super simple linker? (for ELF, but with only the most basic features possible?)
+- A simplified make clone?
+- A simple markdown->HTML transpiler?
 

@@ -8,7 +8,7 @@ HAREFLAGS =
 all: ws echo
 
 ws: ws.ha
-	$(HARE) build $(HAREFLAGS) -o $@ $^
+	$(HARE) build $(HAREFLAGS) -lcrypto -o $@ $^
 
 echo: echo.ha
 	$(HARE) build $(HAREFLAGS) -o $@ $^

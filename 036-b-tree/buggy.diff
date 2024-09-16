@@ -1,0 +1,253 @@
+diff --git a/000-b-tree/btree.ha b/000-b-tree/btree.ha
+index 4b2262a..8ac7ae1 100644
+--- a/000-b-tree/btree.ha
++++ b/000-b-tree/btree.ha
+@@ -15,7 +15,50 @@ def MAX_VAL_LEN: size = PAGE_SIZE / 4;
+ 
+ export type btree = struct {
+ 	root: node,
+-	nodes: [](size, *[PAGE_SIZE]u8)
++	free_pages: []size,
++	
++	// The idea will be to just map the hole file all the time,
++	// no matter how big it is. The mapping is PRIVATE, changes
++	// will be written to disk with explicit write syscalls.
++	// The kernel's page cache/FS buffer will handle cases of
++	// data beeing bigger than the RAM for us (hopefully?).
++	// FIXME: The mapping is currently shared, because otherwise,
++	// before any io::munmap, the changes must all be written first!
++	file: io::file,
++	file_mapped: *[*]u8,
++	file_size: size,
++};
++
++export fn new(f: io::file) (*btree | io::error) = {
++	let file_size = io::seek(f, 0, io::whence::END)?;
++	if (file_size == 0) {
++		let file_size = 1000 * PAGE_SIZE;
++		io::trunc(f, file_size)?;
++		let m = io::mmap(null, file_size,
++			io::prot::READ | io::prot::WRITE,
++			io::mflag::SHARED, f, 0)?: *[*]u8;
++		let bt = alloc(btree {
++			root = build_leaf_node([], [], PAGE_SIZE,
++				&m[PAGE_SIZE]: *[PAGE_SIZE]u8).0,
++			file = f,
++			file_mapped = m,
++			file_size = file_size,
++			free_pages = [],
++		});
++		for (let off: size = 2 * PAGE_SIZE; off < file_size; off += PAGE_SIZE)
++			append(bt.free_pages, off);
++		// write_header(bt)?;
++		return bt;
++	};
++
++	fmt::fatal("TODO...!");
++};
++
++export fn finish(bt: *btree) (void | io::error) = {
++	io::munmap(bt.file_mapped, bt.file_size)?;
++	io::close(bt.file)?;
++	free(bt.free_pages);
++	free(bt);
+ };
+ 
+ export fn dump_btree(f: io::handle, bt: *btree) int = {
+@@ -39,7 +82,7 @@ export fn dump_btree(f: io::handle, bt: *btree) int = {
+ 				let n = read_node(bt, get_off(node, i): size * PAGE_SIZE)!;
+ 				append(worklist, (depth + 1, n));
+ 			};
+-		} else {
++		} else if (node.num_keys > 0) {
+ 			let first_key = get_key(node, 0);
+ 			leafs_ordered &&= len(prev_key) == 0 || compare_bytes(prev_key, first_key) <= 0;
+ 			prev_key = get_key(node, node.num_keys - 1);
+@@ -174,38 +217,78 @@ fn insert_into_leaf(bt: *btree, n: node, key: []u8, val: []u8) (node | (node, no
+ 	};
+ };
+ 
++// FIXME: Test this stuff.
++fn delete_from_leaf(bt: *btree, n: node, key: []u8) (void | node | io::error) = {
++	assert(n.typ == node_type::LEAF);
++	let keys: [][]u8 = get_keys(n, []);
++	defer free(keys);
++	let vals: [][]u8 = get_vals(n, []);
++	defer free(vals);
++
++	let (key_exists, idx) = lookup_in_node(n, key);
++	if (!key_exists) return void;
++
++	delete(keys[idx]);
++	delete(vals[idx]);
++
++	let a = allocate_page(bt)?;
++	return build_leaf_node(keys, vals, a.0, a.1).0;
++};
++
++fn write_header(bt: *btree) (void | io::error) = {
++	fmt::fatal("TODO...!");
++};
++
+ fn read_node(bt: *btree, page_offset: size) (node | io::error) = {
+-	for (let i: size = 0; i < len(bt.nodes); i += 1)
+-		if (bt.nodes[i].0 == page_offset) {
+-			let n = get_node(bt.nodes[i].1);
+-			assert(n.page_offset == page_offset);
+-			return n;
+-		};
+-	return errors::invalid;
++	assert(page_offset % PAGE_SIZE == 0, "expected page alignment");
++	assert(page_offset < bt.file_size);
++	let n = get_node(&bt.file_mapped[page_offset]: *[PAGE_SIZE]u8);
++	assert(n.page_offset == page_offset);
++	return n;
+ };
+ 
+ fn allocate_page(bt: *btree) ((size, *[PAGE_SIZE]u8) | io::error) = {
+-	let page_offset = len(bt.nodes) * PAGE_SIZE;
+-	let res = (page_offset, alloc([0...]): *[PAGE_SIZE]u8);
+-	append(bt.nodes, res);
+-	return res;
++	let N = len(bt.free_pages);
++	if (N > 0) {
++		let off = bt.free_pages[N - 1];
++		assert(off % PAGE_SIZE == 0, "expected page alignment");
++		delete(bt.free_pages[N - 1]);
++		return (off, &bt.file_mapped[off]: *[PAGE_SIZE]u8);
++	};
++
++	const GROW_BY_NUM_PAGES: size = 4;
++	let prev_size = bt.file_size;
++	io::munmap(bt.file_mapped, bt.file_size)?;
++	bt.file_size += GROW_BY_NUM_PAGES * PAGE_SIZE;
++	io::trunc(bt.file, bt.file_size)?;
++	let old_file_mapped = bt.file_mapped;
++	// FIXME: See comment in new(): A.t.m., there is no CoW!
++	bt.file_mapped = io::mmap(bt.file_mapped, bt.file_size,
++		io::prot::READ | io::prot::WRITE,
++		io::mflag::SHARED | io::mflag::FIXED, bt.file, 0)?: *[*]u8;
++	assert(old_file_mapped == bt.file_mapped,
++		"would require updating all node.raw pointers!");
++	for (let off: size = prev_size; off < bt.file_size; off += PAGE_SIZE)
++		append(bt.free_pages, off);
++	return allocate_page(bt);
+ };
+ 
+ @test fn test_btree_basics() void = {
+ 	let f: io::file = temp::file(io::mode::RDWR, 0o755)!;
+-	defer io::close(f)!;
+-	let fake_root_buf: *[PAGE_SIZE]u8 = alloc([0...]);
+-	defer free(fake_root_buf);
+-	let bt = btree {
+-		root = build_leaf_node([], [], 0, fake_root_buf).0,
+-		nodes = []
+-	};
+-	append(bt.nodes, (0, bt.root.raw));
+-	assert(get(&bt, strings::toutf8("foo"))! is void);
++	let bt: *btree = new(f)!;
++	defer finish(bt)!;
++
++	assert(get(bt, strings::toutf8("foo"))! is void);
++	set(bt,
++		strings::toutf8("foo"),
++		strings::toutf8("bar"))!;
++	assert(compare_bytes(
++		get(bt, strings::toutf8("foo"))! as []u8,
++		strings::toutf8("bar")) == 0);
+ 
+-	const NUM_ELEMENTS: size = 2000;
+-	const KEY_LEN: size = 50;
+-	const VAL_LEN: size = 50;
++	const NUM_ELEMENTS: size = 2500;
++	const KEY_LEN: size = 100;
++	const VAL_LEN: size = 100;
+ 
+ 	let test_data: [](str, str) = [];
+ 	defer {
+@@ -223,20 +306,58 @@ fn allocate_page(bt: *btree) ((size, *[PAGE_SIZE]u8) | io::error) = {
+ 	};
+ 
+ 	for (let i: size = 0; i < len(test_data); i += 1)
+-		set(&bt,
++		set(bt,
+ 			strings::toutf8(test_data[i].0),
+ 			strings::toutf8(test_data[i].1))!;
+ 	
+-	let depth = dump_btree(os::stderr, &bt);
++	let depth = dump_btree(os::stderr, bt);
+ 	assert(depth >= 2, "splitting of inner nodes not tested");
+ 
+ 	shuffle_test_data(&r, test_data);
+ 	for (let i: size = 0; i < len(test_data); i += 1) {
+-		let val = get(&bt, strings::toutf8(test_data[i].0))!;
++		let val = get(bt, strings::toutf8(test_data[i].0))!;
+ 		assert(strings::fromutf8(val as []u8)! == test_data[i].1);
+ 	};
+ };
+ 
++//@test fn test_btree_deletion() void = {
++//	let f: io::file = temp::file(io::mode::RDWR, 0o755)!;
++//	let bt: *btree = new(f)!;
++//	defer finish(bt)!;
++//
++//	const NUM_ELEMENTS: size = 1;
++//	const KEY_LEN: size = 25;
++//	const VAL_LEN: size = 100;
++//
++//	let test_data: [](str, str) = [];
++//	defer {
++//		for (let i: size = 0; i < len(test_data); i += 1) {
++//			free(test_data[i].0);
++//			free(test_data[i].1);
++//		};
++//		free(test_data);
++//	};
++//	let r = random::init(time::unix(time::now(time::clock::REALTIME)): u64);
++//	for (let i: size = 0; i < NUM_ELEMENTS; i += 1) {
++//		let key = random_string(&r, KEY_LEN);
++//		let val = random_string(&r, VAL_LEN);
++//		append(test_data, (key, val));
++//	};
++//
++//	for (let i: size = 0; i < len(test_data); i += 1)
++//		set(bt,
++//			strings::toutf8(test_data[i].0),
++//			strings::toutf8(test_data[i].1))!;
++//
++//	dump_btree(os::stderr, bt);
++//
++//	shuffle_test_data(&r, test_data);
++//	for (let i: size = 0; i < len(test_data); i += 1) {
++//		let found = del(bt, strings::toutf8(test_data[i].0))!;
++//		assert(found);
++//	};
++//};
++
+ fn shuffle_test_data(r: *random::random, data: [](str, str)) void = {
+ 	let N = len(data);
+ 	let num_shuffles = N / 2;
+diff --git a/000-b-tree/node.ha b/000-b-tree/node.ha
+index 8ce019f..c081197 100644
+--- a/000-b-tree/node.ha
++++ b/000-b-tree/node.ha
+@@ -37,19 +37,6 @@ export fn dump_node(f: io::handle, n: node, ident: str = "") void = {
+ 	fmt::fprintln(f, "")!;
+ };
+ 
+-fn empty_node(typ: node_type, page_offset: size, raw: *[PAGE_SIZE]u8) node = {
+-	assert(page_offset % PAGE_SIZE == 0);
+-	let page_offset = page_offset / PAGE_SIZE;
+-	raw[0] = (if (typ == node_type::INNER) 0x80u8 else 0x00u8) | ((page_offset >> 8): u8);
+-	raw[1] = ((page_offset >> 0): u8);
+-	return node {
+-		typ = typ,
+-		page_offset = page_offset,
+-		num_keys = 0,
+-		raw = raw
+-	};
+-};
+-
+ fn get_node(raw: *[PAGE_SIZE]u8) node = {
+ 	let pageid = ((raw[0]: u16) << 8) | (raw[1]: u16);
+ 	let num_keys = ((raw[2]: u16) << 8) | (raw[3]: u16);
