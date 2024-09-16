@@ -1,5 +1,5 @@
 CC = clang
-CFLAGS = -Wall -Wextra -std=c11 -g -O0 -fsanitize=address -Wno-unused-parameter
+CFLAGS = -Wall -Wextra -std=c11 -g -O3 -Wno-unused-parameter
 
 .PHONY: all clean
 

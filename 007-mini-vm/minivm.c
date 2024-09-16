@@ -52,7 +52,7 @@ static inline void vm_op_nop  (vm_inst_t ins) { pc += 1; };
 static inline void vm_op_ld   (vm_inst_t ins) { pc += 1; regs[VM_OP0(ins)] = memory[regs[VM_OP1(ins)]]; };
 static inline void vm_op_st   (vm_inst_t ins) { pc += 1; memory[regs[VM_OP0(ins)]] = regs[VM_OP1(ins)]; };
 static inline void vm_op_ldi  (vm_inst_t ins) { pc += 1; regs[VM_OP0(ins)] = VM_OP1(ins); };
-static inline void vm_op_ldli (vm_inst_t ins) { assert(0); };
+static inline void vm_op_ldli (vm_inst_t ins) { pc += 1; regs[VM_OP0(ins)] = *((uint16_t*)code + pc); pc += 1; };
 static inline void vm_op_add  (vm_inst_t ins) { pc += 1; regs[VM_OP0(ins)] += regs[VM_OP1(ins)]; };
 static inline void vm_op_mul  (vm_inst_t ins) { pc += 1; regs[VM_OP0(ins)] *= regs[VM_OP1(ins)]; };
 static inline void vm_op_sub  (vm_inst_t ins) { pc += 1; regs[VM_OP0(ins)] -= regs[VM_OP1(ins)]; };
@@ -64,13 +64,14 @@ static inline void vm_op_jmp  (vm_inst_t ins) { pc = *((uint16_t*)code + pc + 1)
 static inline void vm_op_jrel (vm_inst_t ins) { assert(0); }
 static inline void vm_op_jind (vm_inst_t ins) { assert(0); }
 static inline void vm_op_beq  (vm_inst_t ins) {
-	if (regs[VM_OP0(ins)] == regs[VM_OP1(ins)])
-		vm_op_jmp(ins);
-	else
-		pc += 2;
+	if (regs[VM_OP0(ins)] == regs[VM_OP1(ins)]) vm_op_jmp(ins);
+	else                                        pc += 2;
 }
 static inline void vm_op_bne  (vm_inst_t ins) { assert(0); }
-static inline void vm_op_blt  (vm_inst_t ins) { assert(0); }
+static inline void vm_op_blt  (vm_inst_t ins) {
+	if (regs[VM_OP0(ins)]  < regs[VM_OP1(ins)]) vm_op_jmp(ins);
+	else                                        pc += 2;
+}
 static inline void vm_op_ble  (vm_inst_t ins) { assert(0); }
 static inline void vm_op_hlt  (vm_inst_t ins) { exit(EXIT_SUCCESS); };
 static inline void vm_op_io   (vm_inst_t ins) {
@@ -84,100 +85,80 @@ static inline void vm_op_io   (vm_inst_t ins) {
 };
 
 static void run_vm() {
+#define USE_COMPUTED_GOTO 0
+#if USE_COMPUTED_GOTO
 	static void* jump_table[] = {
-		[VM_NOP] = &&lbl_nop,
-		[VM_LD] = &&lbl_ld,
-		[VM_ST] = &&lbl_st,
-		[VM_LDI] = &&lbl_ldi,
-		[VM_LDLI] = &&lbl_ldli,
-		[VM_ADD] = &&lbl_add,
-		[VM_MUL] = &&lbl_mul,
-		[VM_SUB] = &&lbl_sub,
-		[VM_DIV] = &&lbl_div,
-		[VM_SHL] = &&lbl_shl,
-		[VM_ADDI] = &&lbl_addi,
-		[VM_SUBI] = &&lbl_subi,
-		[VM_JMP] = &&lbl_jmp,
-		[VM_JREL] = &&lbl_jrel,
-		[VM_JIND] = &&lbl_jind,
-		[VM_BEQ] = &&lbl_beq,
-		[VM_BNE] = &&lbl_bne,
-		[VM_BLT] = &&lbl_blt,
-		[VM_BLE] = &&lbl_ble,
-		[VM_HLT] = &&lbl_hlt,
-		[VM_IO] = &&lbl_io,
+		[VM_NOP]  = &&LABEL_vm_op_nop,
+		[VM_LD]   = &&LABEL_vm_op_ld,
+		[VM_ST]   = &&LABEL_vm_op_st,
+		[VM_LDI]  = &&LABEL_vm_op_ldi,
+		[VM_LDLI] = &&LABEL_vm_op_ldli,
+		[VM_ADD]  = &&LABEL_vm_op_add,
+		[VM_MUL]  = &&LABEL_vm_op_mul,
+		[VM_SUB]  = &&LABEL_vm_op_sub,
+		[VM_DIV]  = &&LABEL_vm_op_div,
+		[VM_SHL]  = &&LABEL_vm_op_shl,
+		[VM_ADDI] = &&LABEL_vm_op_addi,
+		[VM_SUBI] = &&LABEL_vm_op_subi,
+		[VM_JMP]  = &&LABEL_vm_op_jmp,
+		[VM_JREL] = &&LABEL_vm_op_jrel,
+		[VM_JIND] = &&LABEL_vm_op_jind,
+		[VM_BEQ]  = &&LABEL_vm_op_beq,
+		[VM_BNE]  = &&LABEL_vm_op_bne,
+		[VM_BLT]  = &&LABEL_vm_op_blt,
+		[VM_BLE]  = &&LABEL_vm_op_ble,
+		[VM_HLT]  = &&LABEL_vm_op_hlt,
+		[VM_IO]   = &&LABEL_vm_op_io,
 	};
 
-	#define COMPUTED_GOTO() goto *jump_table[code[pc].opcode]
+	#define VM_OP_ENTRY(opc, func) \
+		LABEL_ ## func: \
+			func(code[pc]); \
+			goto *jump_table[code[pc].opcode];
 
-	COMPUTED_GOTO();
-	for(;;) {
-	lbl_nop:
-		vm_op_nop(code[pc]);
-		COMPUTED_GOTO();
-	lbl_ld:
-		vm_op_ld(code[pc]);
-		COMPUTED_GOTO();
-	lbl_st:
-		vm_op_st(code[pc]);
-		COMPUTED_GOTO();
-	lbl_ldi:
-		vm_op_ldi(code[pc]);
-		COMPUTED_GOTO();
-	lbl_ldli:
-		vm_op_ldli(code[pc]);
-		COMPUTED_GOTO();
-	lbl_add:
-		vm_op_add(code[pc]);
-		COMPUTED_GOTO();
-	lbl_mul:
-		vm_op_mul(code[pc]);
-		COMPUTED_GOTO();
-	lbl_sub:
-		vm_op_sub(code[pc]);
-		COMPUTED_GOTO();
-	lbl_div:
-		vm_op_div(code[pc]);
-		COMPUTED_GOTO();
-	lbl_shl:
-		vm_op_shl(code[pc]);
-		COMPUTED_GOTO();
-	lbl_addi:
-		vm_op_addi(code[pc]);
-		COMPUTED_GOTO();
-	lbl_subi:
-		vm_op_subi(code[pc]);
-		COMPUTED_GOTO();
-	lbl_jmp:
-		vm_op_jmp(code[pc]);
-		COMPUTED_GOTO();
-	lbl_jrel:
-		vm_op_jrel(code[pc]);
-		COMPUTED_GOTO();
-	lbl_jind:
-		vm_op_jind(code[pc]);
-		COMPUTED_GOTO();
-	lbl_beq:
-		vm_op_beq(code[pc]);
-		COMPUTED_GOTO();
-	lbl_bne:
-		vm_op_bne(code[pc]);
-		COMPUTED_GOTO();
-	lbl_blt:
-		vm_op_blt(code[pc]);
-		COMPUTED_GOTO();
-	lbl_ble:
-		vm_op_ble(code[pc]);
-		COMPUTED_GOTO();
-	lbl_hlt:
-		vm_op_hlt(code[pc]);
-		COMPUTED_GOTO();
-	lbl_io:
-		vm_op_io(code[pc]);
-		COMPUTED_GOTO();
+	goto *jump_table[code[pc].opcode];
+	for (;;) {
+#else
+	#define VM_OP_ENTRY(opc, func) \
+		case opc: \
+			func(ins); \
+			break;
+	for (;;) {
+		vm_inst_t ins = code[pc];
+		switch ((enum vm_opcodes)ins.opcode) {
+#endif
+
+		VM_OP_ENTRY(VM_NOP, vm_op_nop);
+		VM_OP_ENTRY(VM_LD, vm_op_ld);
+		VM_OP_ENTRY(VM_ST, vm_op_st);
+		VM_OP_ENTRY(VM_LDI, vm_op_ldi);
+		VM_OP_ENTRY(VM_LDLI, vm_op_ldli);
+		VM_OP_ENTRY(VM_ADD, vm_op_add);
+		VM_OP_ENTRY(VM_MUL, vm_op_mul);
+		VM_OP_ENTRY(VM_SUB, vm_op_sub);
+		VM_OP_ENTRY(VM_DIV, vm_op_div);
+		VM_OP_ENTRY(VM_SHL, vm_op_shl);
+		VM_OP_ENTRY(VM_ADDI, vm_op_addi);
+		VM_OP_ENTRY(VM_SUBI, vm_op_subi);
+		VM_OP_ENTRY(VM_JMP, vm_op_jmp);
+		VM_OP_ENTRY(VM_JREL, vm_op_jrel);
+		VM_OP_ENTRY(VM_JIND, vm_op_jind);
+		VM_OP_ENTRY(VM_BEQ, vm_op_beq);
+		VM_OP_ENTRY(VM_BNE, vm_op_bne);
+		VM_OP_ENTRY(VM_BLT, vm_op_blt);
+		VM_OP_ENTRY(VM_BLE, vm_op_ble);
+		VM_OP_ENTRY(VM_HLT, vm_op_hlt);
+		VM_OP_ENTRY(VM_IO, vm_op_io);
+	
+#if USE_COMPUTED_GOTO
 	}
+#else
+		}
+	}
+#endif
 }
 
+// Example program: countdown
 static const vm_inst_t example_program_count[] = {
 	[  0] = VM_INST(VM_LDI, 0x0, 10),
 	[  1] = VM_INST(VM_IO, 0x0, IO_OUT),
@@ -191,7 +172,7 @@ static const vm_inst_t example_program_count[] = {
 	[ 10] = VM_INST(VM_HLT, 0, 0)
 };
 
-// Example program:
+// Example program: fibonacci numbers
 static const vm_inst_t example_program_fibs[] = {
 	[  0] = VM_INST(VM_LDI, 0x0, 10),   // r0 = n
 	[  1] = VM_INST(VM_LDI, 0xa, 1),   // ra = 1
@@ -212,10 +193,41 @@ static const vm_inst_t example_program_fibs[] = {
 	[50] = VM_INST(VM_HLT, 0x0, 0x0)
 };
 
+// Example program: something that computes something for a benchmark
+static const vm_inst_t example_program_benchmark[] = {
+	[  0] = VM_INST(VM_NOP, 0, 0),
+	[  1] = VM_INST(VM_LDLI, 0xa, 0),
+	[  2] = { .raw = 8192 },
+	[  3] = VM_INST(VM_LDI, 0x0, 0),
+	[  4] = VM_INST(VM_BEQ, 0x0, 0xa),
+	[  5] = { .raw = 100 },
+	[  6] = VM_INST(VM_NOP, 0xc, 0),
+	[  7] = VM_INST(VM_NOP, 0xc, 0xa),
+	[  8] = VM_INST(VM_LDLI, 0xb, 0),
+	[  9] = { .raw = 8192 },
+	[ 10] = VM_INST(VM_BEQ, 0x0, 0xb),
+	[ 11] = { .raw = 22 },
+	[ 12] = VM_INST(VM_NOP, 0xc, 0xb),
+	[ 13] = VM_INST(VM_NOP, 0xc, 0xa),
+	[ 14] = VM_INST(VM_NOP, 0xc, 0xc),
+	[ 15] = VM_INST(VM_NOP, 0xc, 8),
+	[ 16] = VM_INST(VM_LDI, 0x1, 1),
+	[ 17] = VM_INST(VM_SUB, 0xb, 0x1),
+	[ 18] = VM_INST(VM_JMP, 0, 0),
+	[ 19] = { .raw = 10 },
+	[ 20] = VM_INST(VM_NOP, 0, 0),
+	[ 21] = VM_INST(VM_NOP, 0, 0),
+	[ 22] = VM_INST(VM_NOP, 0, 0),
+	[ 23] = VM_INST(VM_SUBI, 0xa, 1),
+	[ 24] = VM_INST(VM_JMP, 0, 0),
+	[ 25] = { .raw = 4 },
+	[100] = VM_INST(VM_HLT, 0, 0)
+};
+
 int main(int argc, const char *argv[]) {
 	assert(sizeof(vm_inst_t) == sizeof(uint16_t));
 
-	code = example_program_fibs;
+	code = example_program_benchmark;
 	run_vm();
 
 }

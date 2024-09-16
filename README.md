@@ -46,5 +46,7 @@ Tags: __*Clang*__, __*LLVM*__, __*Compiler*__
 
 This project was more about building LLVM (14.0) and looking into the build system than the plugin itself. LLVM was build like this: `cmake -G Ninja -DLLVM_ENABLE_PROJECTS="clang;compiler-rt;lld" -DLLVM_TARGETS_TO_BUILD="RISCV" -DCMAKE_INSTALL_PREFIX="/opt/llvm" -DCMAKE_BUILD_TYPE="DEBUG" -DLLVM_OPTIMIZED_TABLEGEN="ON" ../llvm` (with `lld` as a linker and `ninja -j 1` while linking because otherwise, 16GB of main memory are not enough). Build the plugin like this: `cmake -G Ninja -DLLVM_DIR=../../../llvm/llvm-project/llvm -DClang_DIR=../../../llvm/llvm-project/clang ..` (from `./006-clang-plugin/build`). The plugin warns when a variable is assigned to itself (in its own statement).
 
+### 007: [Bytecode-VM comparing threaded jumps and a jump table](./007-mini-vm)
 
+Somehow, [the iSH iOS app](https://github.com/ish-app/ish) manages to have a quite good emulator (still quite slow) on a platform where code generation is impossible because of the restrictions iOS enforces on paging. I knew of computed `goto`s, but have never used them before. This is my take on a bytecode VM that uses the threaded dispatch technique used in _iSH_, but without the assembly. Using that technique indeed increases performance by up to 2x for my simple testcase.
 
