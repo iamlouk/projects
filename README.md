@@ -1,14 +1,5 @@
 # Hello World!
 
-Future Ideas:
-
-- A REDIS clone (using epoll etc), maybe in Rust?
-- A [QBE](https://c9x.me/compile/) to/from LLVM-IR or to/from GCC GIMPLE translation?
-- A small simple compiler backend: ISel, Register Allocation, ...
-- A C preprocessor
-- A B-Tree or a persistent key-value store
-- A Hare libgccjit backend using [hare::parse](https://docs.harelang.org/hare/parse) as frontend?
-
 Projects to small for their own repository or just small little things I want to try out.
 
 ### 001: [Minesweeper](./001-minesweeper)
@@ -217,4 +208,15 @@ This is a from-scratch implementation of the [WebSocket protocol (RFC6455)](http
 Tags: __*C*__, __*FUSE*__
 
 In a past job, I worked with union/overlay file systems like [overlayfs](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/fs/overlayfs). They are extremely useful sometimes. This project is a extremely incomplete (at the time of writing, creating and deleting files and directories works, but no read/write of actual files) and shitty version of such a file system where you have a underlying and a overlay directory. The underlying one is never changed, all changes are represented in the overlay dir.
+
+
+## Future Ideas:
+
+- A REDIS clone (using epoll etc), maybe in Rust?
+- A [QBE](https://c9x.me/compile/) to/from LLVM-IR or to/from GCC GIMPLE translation?
+- A small simple compiler backend: ISel, Register Allocation, ...
+- A C preprocessor
+- A B-Tree or a persistent key-value store
+- A Hare libgccjit backend using [hare::parse](https://docs.harelang.org/hare/parse) as frontend?
+- A websocket-based shared canvas for [louknr.net](https://louknr.net).
 
