@@ -1,4 +1,4 @@
-.PHONY: day01 day02 day03 day04 day05 day06
+.PHONY: day01 day02 day03 day04 day05 day06 day07
 
 # Fortran may not be as bad as I thought and actually
 # pretty useful sometimes, but text processing is not
@@ -26,6 +26,9 @@ day05:
 	node ./05/fertilizer.mjs < ./05/input.txt
 
 day06:
-	gcc -Wall -Wextra -fsanitize=address -O1 -g -fopenmp ./06/waitforit.c -o ./06/waitforit
-	./06/waitforit < ./06/input.txt
+	gcc -Wall -Wextra -fsanitize=address -O1 -g -fopenmp ./06/waitforit.c -o ./06/solver
+	./06/solver < ./06/input.txt
 
+day07:
+	rustc -C opt-level=1 -C debuginfo=1 ./07/camelcards.rs -o ./07/solver
+	./07/solver < ./07/input.txt
