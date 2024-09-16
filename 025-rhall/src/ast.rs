@@ -1,7 +1,8 @@
 use std::fmt;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::core::{Error, SLoc, Type};
+use crate::core::{Error, SLoc, Type, Value};
+use crate::eval::Env;
 use crate::lex::{Lexer, Tok};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -25,32 +26,32 @@ pub type NodeRef = Rc<RefCell<Node>>;
 pub enum Node {
     Id {
         sloc: SLoc,
-        typ: Type,
+        typ: Option<Rc<Type>>,
         name: Rc<str>,
     },
     Integer {
         sloc: SLoc,
-        typ: Type,
+        typ: Option<Rc<Type>>,
         value: i64,
     },
     Boolean {
         sloc: SLoc,
-        typ: Type,
+        typ: Option<Rc<Type>>,
         value: bool,
     },
     String {
         sloc: SLoc,
-        typ: Type,
+        typ: Option<Rc<Type>>,
         value: Rc<str>,
     },
     Invert {
         sloc: SLoc,
-        typ: Type,
+        typ: Option<Rc<Type>>,
         op0: NodeRef,
     },
     BinOp {
         sloc: SLoc,
-        typ: Type,
+        typ: Option<Rc<Type>>,
         op: BinOp,
         lhs: NodeRef,
         rhs: NodeRef,
@@ -58,42 +59,45 @@ pub enum Node {
     },
     Call {
         sloc: SLoc,
-        typ: Type,
+        typ: Option<Rc<Type>>,
         callable: NodeRef,
         args: Vec<NodeRef>,
     },
     IfThenElse {
         sloc: SLoc,
-        typ: Type,
+        typ: Option<Rc<Type>>,
         op0: NodeRef,
         op1: NodeRef,
         op2: NodeRef,
     },
     LetIn {
         sloc: SLoc,
-        typ: Type,
+        typ: Option<Rc<Type>>,
         name: Rc<str>,
         value: NodeRef,
         body: NodeRef,
     },
     Lambda {
         sloc: SLoc,
-        typ: Type,
-        args: Vec<(Rc<str>, Rc<Type>)>,
-        body: NodeRef,
+        typ: Option<Rc<Type>>,
+        args: Vec<(Rc<str>, Option<Rc<Type>>, NodeRef)>,
+        body: NodeRef, // <- Technically/Theoretically, this should be the only
+                       // field where a Rc<RefCell<Node>> is really needed.
+                       // All other AST-children should also be able to just
+                       // be Box<Node>.
     },
     Forall {
         sloc: SLoc,
-        typ: Type,
-        argtypes: Vec<(Rc<str>, NodeRef)>,
-        rettyp: NodeRef
+        typ: Option<Rc<Type>>,
+        argtypes: Vec<(Rc<str>, Option<Rc<Type>>, NodeRef)>,
+        rettyp: NodeRef // <- Well, here as well...!
     }
 }
 
 impl Node {
     #[allow(unused)]
-    pub fn get_type(&self) -> &Type {
-        match self {
+    pub fn get_type(&self) -> Rc<Type> {
+        let typ = match self {
             Node::Id { typ, .. } => typ,
             Node::Integer { typ, .. } => typ,
             Node::Boolean { typ, .. } => typ,
@@ -105,6 +109,145 @@ impl Node {
             Node::LetIn { typ, .. } => typ,
             Node::Lambda { typ, .. } => typ,
             Node::Forall { typ, .. } => typ,
+        };
+        typ.clone().unwrap()
+    }
+
+    pub fn typecheck(&mut self, env: &mut Env) -> Result<Rc<Type>, Error> {
+        match self {
+            Node::Id { typ: Some(t), .. } => Ok(t.clone()),
+            Node::Id { sloc, typ, name } => {
+                let t = match env.lookup(name).ok_or(Error::ExpectedType(*sloc))? {
+                    Value::Type(_, t) => t,
+                    _ => panic!()
+                };
+                *typ = Some(t.clone());
+                Ok(t)
+            },
+            Node::Integer { typ: Some(t), .. } => Ok(t.clone()),
+            Node::Integer { typ, .. } => {
+                let t = env.int_type.clone();
+                *typ = Some(t.clone());
+                Ok(t)
+            },
+            Node::Boolean { typ: Some(t), .. } => Ok(t.clone()),
+            Node::Boolean { typ, .. } => {
+                let t = env.bool_type.clone();
+                *typ = Some(t.clone());
+                Ok(t)
+            },
+            Node::String { typ: Some(t), .. } => Ok(t.clone()),
+            Node::String { typ, .. } => {
+                let t = env.str_type.clone();
+                *typ = Some(t.clone());
+                Ok(t)
+            },
+            Node::Invert { typ: Some(t), .. } => Ok(t.clone()),
+            Node::Invert { sloc, typ, op0 } => {
+                let t = op0.borrow_mut().typecheck(env)?;
+                if *t.as_ref() != Type::Boolean && *t.as_ref() != Type::Integer {
+                    return Err(Error::TypeError(*sloc,
+                            format!("invalid type for '~' operator: {}", t)))
+                }
+                *typ = Some(t.clone());
+                Ok(t)
+            },
+            Node::BinOp { typ: Some(t), .. } => Ok(t.clone()),
+            Node::BinOp { sloc, typ, op, lhs, rhs, iscmp } => {
+                let lhsty = lhs.borrow_mut().typecheck(env)?;
+                let rhsty = rhs.borrow_mut().typecheck(env)?;
+                if *lhsty != *rhsty {
+                    return Err(Error::TypeError(*sloc,
+                            format!("binary operator with different operand types: {} and {}",
+                                lhsty.as_ref(), rhsty.as_ref())))
+                }
+
+                let t = match (op, iscmp, lhsty.as_ref()) {
+                    (_, true, Type::Integer) => env.bool_type.clone(),
+                    (BinOp::And | BinOp::Or, _, Type::Boolean) => lhsty,
+                    (BinOp::And | BinOp::Or, _, _) => return Err(Error::TypeError(*sloc,
+                            format!("'&' and '|' only work for booleans"))),
+                    (_, false, Type::Integer) => lhsty,
+                    _ => unimplemented!()
+                };
+                *typ = Some(t.clone());
+                Ok(t)
+            },
+            Node::Call { typ: Some(t), .. } => Ok(t.clone()),
+            Node::Call { sloc, typ, callable, args } => {
+                let callablety = callable.borrow_mut().typecheck(env)?;
+                if let Type::Lambda(argtypes, rettyp) = callablety.as_ref() {
+                    if args.len() != argtypes.len() {
+                        return Err(Error::Uncallable(callable.clone()))
+                    }
+
+                    for (arg, (_, argtyp)) in args.iter().zip(argtypes.iter()) {
+                        let t = arg.borrow_mut().typecheck(env)?;
+                        if t.as_ref() != argtyp.as_ref() {
+                            return Err(Error::TypeError(*sloc,
+                                    format!("expected: {}, found: {}", argtyp, t)));
+                        }
+                    }
+
+                    *typ = Some(rettyp.clone());
+                    return Ok(rettyp.clone())
+                }
+
+                Err(Error::Uncallable(callable.clone()))
+            },
+            Node::IfThenElse { typ: Some(t), .. } => Ok(t.clone()),
+            Node::IfThenElse { sloc, typ, op0, op1, op2 } => {
+                let op0ty = op0.borrow_mut().typecheck(env)?;
+                if op0ty.as_ref() != &Type::Boolean {
+                    return Err(Error::TypeError(*sloc,
+                            format!("condition of if-then-else needs to be a boolean, not: {}",
+                                op0ty.as_ref())))
+                }
+
+                let op1ty = op1.borrow_mut().typecheck(env)?;
+                let op2ty = op2.borrow_mut().typecheck(env)?;
+
+                if op1ty.as_ref() != op2ty.as_ref() {
+                    return Err(Error::TypeError(*sloc,
+                            format!("branches of if-then-else needs to be of same type, not: {} and {}",
+                                op1ty.as_ref(), op2ty.as_ref())))
+
+                }
+
+                *typ = Some(op1ty);
+                Ok(op2ty)
+            },
+            Node::LetIn { typ: Some(t), .. } => Ok(t.clone()),
+            Node::LetIn { typ, name, value, body, .. } => {
+                let valty = value.borrow_mut().typecheck(env)?;
+                env.push(name, Value::Type(None, valty));
+                let t = body.borrow_mut().typecheck(env)?;
+                env.pop(1);
+                *typ = Some(t.clone());
+                Ok(t)
+            },
+            Node::Lambda { typ: Some(t), .. } => Ok(t.clone()),
+            Node::Lambda { typ, args, body, .. } => {
+                let mut argtypes = Vec::with_capacity(args.len());
+                for (name, argtyp, rawtyp) in args.iter_mut() {
+                    assert!(typ.is_none());
+                    let t = rawtyp.borrow_mut().typecheck(env)?;
+                    *argtyp = Some(t.clone());
+                    env.push(name, Value::Type(None, t.clone()));
+                    argtypes.push((name.clone(), t));
+                }
+
+                let rettyp = body.borrow_mut().typecheck(env)?;
+                let t = Rc::new(Type::Lambda(argtypes, rettyp));
+                env.pop(args.len());
+                *typ = Some(t.clone());
+                Ok(t)
+            },
+            Node::Forall { typ: Some(t), .. } => Ok(t.clone()),
+            Node::Forall { sloc, typ, argtypes, rettyp } => {
+                _ = (sloc, typ, argtypes, rettyp);
+                todo!()
+            }
         }
     }
 }
@@ -140,22 +283,34 @@ impl std::fmt::Display for Node {
                 write!(f, "let {} = {} in {}", name.as_ref(), value.borrow(), body.borrow()),
             Node::Lambda { args, body, .. } => {
                 write!(f, "λ(")?;
-                for (i, (name, typ)) in args.iter().enumerate() {
+                for (i, (name, typ, rawtyp)) in args.iter().enumerate() {
                     if i != 0 { write!(f, ", ")?; }
-                    write!(f, "{}: {}", name.as_ref(), typ.as_ref())?;
+                    if let Some(t) = typ {
+                        write!(f, "{}: {}", name.as_ref(), t.as_ref())?;
+                    } else {
+                        write!(f, "{}: {}", name.as_ref(), rawtyp.borrow())?;
+                    }
                 }
                 write!(f, ") -> {}", body.borrow())
             },
             Node::Forall { argtypes, rettyp, .. } => {
                 write!(f, "∀(")?;
-                for (i, (name, typ)) in argtypes.iter().enumerate() {
+                for (i, (name, typ, rawtyp)) in argtypes.iter().enumerate() {
                     if i != 0 { write!(f, ", ")?; }
-                    write!(f, "{}: {}", name.as_ref(), typ.borrow())?;
+                    if let Some(t) = typ {
+                        write!(f, "{}: {}", name.as_ref(), t.as_ref())?;
+                    } else {
+                        write!(f, "{}: {}", name.as_ref(), rawtyp.borrow())?;
+                    }
                 }
                 write!(f, ") -> {}", rettyp.borrow())
             },
         }
     }
+}
+
+impl PartialEq for Node {
+    fn eq(&self, _other: &Self) -> bool { false }
 }
 
 pub struct Parser<'a> {
@@ -235,7 +390,7 @@ impl<'a> Parser<'a> {
             let op2 = self.parse_expr1()?;
             return Ok(Rc::new(RefCell::new(Node::IfThenElse {
                 sloc,
-                typ: Type::Unresolved(None),
+                typ: None,
                 op0,
                 op1,
                 op2,
@@ -257,7 +412,7 @@ impl<'a> Parser<'a> {
             return Ok(Rc::new(RefCell::new(Node::LetIn {
                 sloc,
                 name,
-                typ: Type::Unresolved(None),
+                typ: None,
                 value,
                 body,
             })));
@@ -299,7 +454,7 @@ impl<'a> Parser<'a> {
             let rhs = self.parse_binop(next_min_prev)?;
             lhs = Rc::new(RefCell::new(Node::BinOp {
                 sloc,
-                typ: Type::Unresolved(None),
+                typ: None,
                 op: binop,
                 lhs,
                 rhs,
@@ -336,7 +491,7 @@ impl<'a> Parser<'a> {
 
                 expr = Rc::new(RefCell::new(Node::Call {
                     sloc: self.consumed_sloc,
-                    typ: Type::Unresolved(None),
+                    typ: None,
                     callable: expr,
                     args,
                 }));
@@ -352,27 +507,27 @@ impl<'a> Parser<'a> {
         Ok(Rc::new(RefCell::new(match tok {
             Tok::Id(name) => Node::Id {
                 sloc,
-                typ: Type::Unresolved(None),
+                typ: None,
                 name,
             },
             Tok::Boolean(value) => Node::Boolean {
                 sloc,
-                typ: Type::Boolean,
+                typ: None,
                 value,
             },
             Tok::Integer(value) => Node::Integer {
                 sloc,
-                typ: Type::Integer,
+                typ: None,
                 value,
             },
             Tok::String(value) => Node::String {
                 sloc,
-                typ: Type::String,
+                typ: None,
                 value,
             },
             Tok::Tilde => Node::Invert {
                 sloc,
-                typ: Type::Unresolved(None),
+                typ: None,
                 op0: self.parse_final()?,
             },
             Tok::LParen => {
@@ -387,7 +542,7 @@ impl<'a> Parser<'a> {
                     let (_, name) = self.expect_id()?;
                     self.expect_token(Tok::Colon)?;
                     let typannot = self.parse()?;
-                    args.push((name, Rc::new(Type::Unresolved(Some(typannot)))));
+                    args.push((name, None, typannot));
 
                     if !self.consume_if(Tok::Comma) {
                         break;
@@ -398,7 +553,7 @@ impl<'a> Parser<'a> {
                 let body = self.parse()?;
                 Node::Lambda {
                     sloc,
-                    typ: Type::Unresolved(None),
+                    typ: None,
                     args,
                     body,
                 }
@@ -411,7 +566,7 @@ impl<'a> Parser<'a> {
                     self.expect_token(Tok::Colon)?;
 
                     let argtyp = self.parse()?;
-                    argtypes.push((name, argtyp));
+                    argtypes.push((name, None, argtyp));
                     if !self.consume_if(Tok::Comma) {
                         break;
                     }
@@ -419,7 +574,7 @@ impl<'a> Parser<'a> {
                 self.expect_token(Tok::RParen)?;
                 self.expect_token(Tok::Arrow)?;
                 let rettyp = self.parse()?;
-                Node::Forall { sloc, typ: Type::Unresolved(None), argtypes, rettyp }
+                Node::Forall { sloc, typ: None, argtypes, rettyp }
             },
             _ => unimplemented!(),
         })))
@@ -455,11 +610,8 @@ mod tests {
                 (match clone_node(&value) {
                     Node::Lambda { args, body, .. } if args.len() == 1 =>
                         (match &args[0] {
-                            (name, typ) if name.as_ref() == "x" => match typ.as_ref() {
-                                Type::Unresolved(Some(id)) => match &*id.borrow() {
-                                    Node::Id { name, .. } if name.as_ref() == "Int" => true,
-                                    _ => false,
-                                },
+                            (name, None, typ) if name.as_ref() == "x" => match &*typ.borrow() {
+                                Node::Id { name, .. } if name.as_ref() == "Int" => true,
                                 _ => false,
                             },
                             _ => false,

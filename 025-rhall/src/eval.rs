@@ -1,8 +1,8 @@
-use std::rc::Rc;
+use std::{rc::Rc, collections::{HashSet, HashMap}};
 
 use crate::{
     ast::{BinOp, NodeRef},
-    core::{Error, Type, Value},
+    core::{Error, Type, Value, SLoc},
 };
 
 pub struct Env {
@@ -10,22 +10,34 @@ pub struct Env {
     // TODO: Add pre-allocated type RCs here that can be used by the parser!
     globals: std::collections::HashMap<&'static str, Value>,
     locals: Vec<(Rc<str>, Value)>,
+    pub string_pool: std::collections::HashSet<Rc<str>>,
+
+    pub int_type: Rc<Type>,
+    pub bool_type: Rc<Type>,
+    pub str_type: Rc<Type>,
+    pub type_type: Rc<Type>
 }
 
 impl Env {
     pub fn new() -> Self {
-        let mut globals = std::collections::HashMap::<&'static str, Value>::new();
-        globals.insert("Int", Value::Type(None, Rc::new(Type::Integer)));
-        globals.insert("Bool", Value::Type(None, Rc::new(Type::Boolean)));
-        globals.insert("Str", Value::Type(None, Rc::new(Type::String)));
-        globals.insert("Type", Value::Type(None, Rc::new(Type::Type)));
-        Self {
-            globals,
+        let mut env = Self {
+            globals: HashMap::new(),
             locals: Vec::with_capacity(16),
-        }
+            string_pool: HashSet::new(),
+
+            int_type: Rc::new(Type::Integer),
+            bool_type: Rc::new(Type::Boolean),
+            str_type: Rc::new(Type::String),
+            type_type: Rc::new(Type::Type)
+        };
+        env.globals.insert("Int", Value::Type(None, env.int_type.clone()));
+        env.globals.insert("Bool", Value::Type(None, env.bool_type.clone()));
+        env.globals.insert("Str", Value::Type(None, env.str_type.clone()));
+        env.globals.insert("Type", Value::Type(None, env.type_type.clone()));
+        env
     }
 
-    fn lookup(&self, name: &str) -> Option<Value> {
+    pub fn lookup(&self, name: &str) -> Option<Value> {
         let local = self.locals.iter().rev().find(|l| l.0.as_ref() == name);
         if let Some((_, val)) = local {
             return Some(val.clone());
@@ -34,16 +46,26 @@ impl Env {
     }
 
     #[allow(unused)]
+    pub fn lookup_type(&self, name: &str, sloc: SLoc) -> Result<Rc<Type>, Error> {
+        match self.lookup(name) {
+            Some(Value::Type(_, t)) => Ok(t),
+            Some(v) => Err(Error::TypeError(sloc, format!("type expected, found: {}", v))),
+            None => Err(Error::TypeError(sloc,
+                    format!("expected type, found nothing for '{}'", name)))
+        }
+    }
+
+    #[allow(unused)]
     pub fn add_global(&mut self, name: &'static str, value: Value) {
         assert!(!self.globals.contains_key(name));
         self.globals.insert(name, value);
     }
 
-    fn push(&mut self, name: &Rc<str>, value: Value) {
+    pub fn push(&mut self, name: &Rc<str>, value: Value) {
         self.locals.push((name.clone(), value));
     }
 
-    fn pop(&mut self, n: usize) {
+    pub fn pop(&mut self, n: usize) {
         assert!(self.locals.len() >= n);
         for _ in 0..n {
             self.locals.pop();
@@ -102,17 +124,25 @@ impl Env {
                 self.pop(1);
                 Ok(res)
             }
-            Node::Lambda { args, body, .. } => Ok(Value::Lambda(args.clone(), body.clone())),
+            Node::Lambda { args, body, .. } => Ok(Value::Lambda(
+                    args.iter().map(|(name, typ, _)|
+                        (name.clone(), typ.clone().unwrap())).collect(),
+                    body.clone())),
             Node::Forall { sloc, argtypes, rettyp, .. } => {
                 let mut args = Vec::with_capacity(argtypes.len());
-                for (name, argtyp) in argtypes.iter() {
-                    let typval = self.eval(argtyp)?;
-                    let typ = match typval {
-                        Value::Type(_, ref t) => t.clone(),
-                        _ => return Err(Error::ExpectedType(*sloc))
-                    };
-                    self.push(name, typval);
-                    args.push((name.clone(), typ));
+                for (name, argtyp, rawargtyp) in argtypes.iter() {
+                    if let Some(typ) = argtyp {
+                        self.push(name, Value::Type(None, typ.clone()));
+                        args.push((name.clone(), typ.clone()));
+                    } else {
+                        let typval = self.eval(rawargtyp)?;
+                        let typ = match typval {
+                            Value::Type(_, ref t) => t.clone(),
+                            _ => return Err(Error::ExpectedType(*sloc))
+                        };
+                        self.push(name, typval);
+                        args.push((name.clone(), typ));
+                    }
                 }
 
                 let rettyp = match self.eval(rettyp)? {
@@ -147,6 +177,7 @@ mod tests {
     fn incto42() {
         let mut env = Env::new();
         let expr = parse("let inc = λ(x: Int) -> x + 1 in inc(41)").unwrap();
+        expr.borrow_mut().typecheck(&mut env).expect("typecheck failed");
         assert_matches!(env.eval(&expr), Ok(Value::Int(42)));
     }
 
@@ -156,6 +187,8 @@ mod tests {
         let expr =
             parse("let fib = λ(n: Int) -> if n < 2 then n else fib(n - 1) + fib(n - 2) in fib(10)")
                 .unwrap();
+        // TODO: Type-checking for recursive functions....
+        // expr.borrow_mut().typecheck(&mut env).expect("typecheck failed");
         assert_matches!(env.eval(&expr), Ok(Value::Int(55)));
     }
 }
