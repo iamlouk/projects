@@ -4,7 +4,10 @@
   <meta charset="utf-8" />
   <title>Syntax Highligthing Test Templae</title>
   <style>
-    .highlight { font-family: 'Consolas', monospace; }
+    .highlight {
+      font-family: 'Consolas', monospace;
+      line-height: 1.2rem;
+    }
     .highlight pre { padding: 0px; margin: 0px; }
     .highlight b { font-weight: normal; }
     .highlight div:nth-child(1) {
@@ -13,6 +16,7 @@
       width: 2rem;
       float: left;
       margin-right: 1rem;
+
     }
     .highlight div:nth-child(2) { display: inline-block; }
     .highlight .ln {
@@ -22,6 +26,8 @@
       color: #8c8c8c;
       height: 1rem;
       font-size: 0.75rem;
+      padding: 0px;
+      margin: 0px;
     }
     .highlight .kw {
       font-weight: bold;
@@ -35,7 +41,7 @@
       color: #4d4d4d;
     }
     .highlight .cst {
-      color: #446600;
+      color: #006600;
     }
     .highlight .str {
       color: #b36b00;
@@ -43,6 +49,20 @@
     .highlight .ty {
       font-weight: bold;
       color: #000099;
+    }
+    @media(prefers-color-scheme: dark) {
+      /* Only for testing, should be removed in proper use. */
+      html { background-color: #333; }
+
+      .highlight {
+        background-color: inherit;
+        color: white;
+      }
+      .highlight .kw { color: #ff00ff; }
+      .highlight .ty { color: #4d4dff; }
+      .highlight .op { color: #cccccc; }
+      .highlight .cst { color: #4dff4d; }
+      .highlight .str { color: #ffc266; }
     }
   </style>
 </head>

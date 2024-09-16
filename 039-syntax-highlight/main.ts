@@ -18,7 +18,7 @@ export interface Part { kind: Kind; data: string }
 export const languageC: LanguageDesc = {
   keywords: /^(case|const|continue|default|do|else|extern|goto|if|for|inline|register|restrict|return|static|switch|typedef|typeof|while)(?=[^A-Za-z_0-9])/,
   comments: /^(\/\/[^\n$]*|#[^\n$]*)/,
-  constants: /^(true|false|(\d[\d\w_\.]*)|([A-Z_][A-Z_0-9]*))/,
+  constants: /^(true|false|(\d[\d\w_\.]*)|([A-Z_][A-Z_0-9]*))(?=[^A-Za-z_0-9])/,
   types: /^(void|signed|unsigned|char|half|int|long|struct|enum|union|bool|float|double|(\w[\w\d\_]*\_t))(?=[^A-Za-z_0-9])/,
   operators: /^[+\-\*\/%?:=<>&|\[\]\(\)\{\};]+/,
   strings: /^("(\\"|[^"])*"|'(\\'|[^'])*')/,
