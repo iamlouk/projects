@@ -1,12 +1,6 @@
 # One Day Projects
 
-Things I programmed on a day or two that are too small for deserving their own repository. Ideas for the future:
-
-- B*-Tree in Rust
-- ART (Adaptive Radix Tree) in Rust with path compression
-- Some generative art in JS with HTML5-Canvases
-- Markdown compiler in python
-- A memory allocator where `free()` is given the size of the allocation (using free-bitmaps, ...)
+Projects to small for their own repository or just small little things I want to try out.
 
 ### 001: [Minesweeper](./001-minesweeper)
 
@@ -84,15 +78,18 @@ This is probably one of the best ones yet. It is a auto-vectorizer for LLVM and 
 
 Tags: __*Rust*__, __*Macros*__
 
-A procedural Rust macro that can be `#[derive()]`d on any enum and adds a `fn match_variants(self: &Self, other: &Self) -> bool` function. This function
-returns true if the enums are of the same variant, but they can hold different values in their fields.
+A procedural Rust macro that can be `#[derive()]`d on any enum and adds a `fn match_variants(self: &Self, other: &Self) -> bool` function. This function returns true if the enums are of the same variant, but they can hold different values in their fields.
 
 ### 015: [Shitty SVE Instruction Emulator](./015-shitty-sve-ie)
 
 Tags: __*SVE*__, __*C*__, __*AArch64*__
 
-SVE (Arm's Scalable Vector Extensions) is cool, but not hardware supporting it is hard to get a.t.m.. This project is a proof of concept for a
-`LD_PRELOAD` and `SIGILL`-handler based instruction emulator for AArch64 hardware without SVE for SVE instructions. It only supports 5 instructions in order
-to run a super simple vectorized vector-add operation. The VL/VScale can be changed. It is super slow (especially for me as I do not have AArch64 hardware
-and had to test inside of a `qemu-system-aarch64` VM (Btw: I learned that user-space `qemu-aarch` does not correctly emulate the `mcontext_t` struct).
+SVE (Arm's Scalable Vector Extensions) is cool, but not hardware supporting it is hard to get a.t.m.. This project is a proof of concept for a `LD_PRELOAD` and `SIGILL`-handler based instruction emulator for AArch64 hardware without SVE for SVE instructions. It only supports 5 instructions in order to run a super simple vectorized vector-add operation. The VL/VScale can be changed. It is super slow (especially for me as I do not have AArch64 hardware and had to test inside of a `qemu-system-aarch64` VM (Btw: I learned that user-space `qemu-aarch` does not correctly emulate the `mcontext_t` struct).
+
+### 016: [Adaptive Radix Tree](./016-art)
+
+Tags: __*C++*__, __*ART*__, __*Data Structures*__
+
+A bad, unoptimized implementation of a [Adaptive Radix Tree](https://db.in.tum.de/~leis/papers/ART.pdf).
+
 
