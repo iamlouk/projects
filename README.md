@@ -104,3 +104,9 @@ Tags: __*Golang*__, __*SSH*__
 
 Golang is a cool language for networking applications because of builtin channels and the great standard library. There is a SSH server and client implementation for Go ([golang.org/x/crypto/ssh](https://pkg.go.dev/golang.org/x/crypto/ssh)) which can be used for basically anything, not just remote terminals. This project contains a SSH server that one can connect to (e.g. via `ssh -p 2022 localhost`) where the different users can play a snake-like game on the same plane.
 
+### 019: [Loop-Control GCC plugin](./019-gcc-loop-plugin)
+
+Tags: __*GCC*__, __*GIMPLE*__, __*C*__
+
+This is a plugin for GCC 13 that injects two function calls into every loop: `__gcclc_loop_preheader` is called every time the preheader of a loop is executed (so once before it is entered), and `__gcclc_loop_header` is called every time the loop header is executed (so once per iteration). The user can then link a runtime library to the compiled code containing those two functions (a super simple one is provided). If `__gcclc_loop_header` returns `0`, the loop is exited, regardless of what the actual loop condition says. This is obviously completely useless, unless maybe to really annoy someone and make them question reality. The Makefile is hopefully simple enough to see how to use it.
+
