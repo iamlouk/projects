@@ -23,6 +23,8 @@ impl SLoc {
 #[derive(Debug)]
 pub enum Error {
     IO(SLoc, std::io::Error),
+    UnresolvedSymbol(SLoc, Rc<str>),
+    Type(SLoc, Type, &'static str),
     EndOfFile(SLoc),
     PreProcessor(SLoc, Tok, &'static str),
     InvalidInt(SLoc, std::num::ParseIntError),
@@ -37,6 +39,7 @@ pub enum Error {
 pub enum Type {
     Unknown,
     Void,
+    Bool,
     Int { bits: u8, signed: bool },
     Ptr { ety: Rc<Type>, volatile: bool, constant: bool, restrict: bool },
     Array(Rc<Type>, Option<usize>),
@@ -46,11 +49,44 @@ pub enum Type {
     Fn { retty: Rc<Type>, argtys: Rc<Vec<Type>> },
 }
 
+impl Type {
+    pub fn is_bool(&self) -> bool { *self == Type::Bool }
+    pub fn is_numerical(&self) -> bool {
+        match self {
+            Self::Int { .. } => true,
+            _ => false
+        }
+    }
+    pub fn is_pointer(&self) -> bool {
+        match self {
+            Self::Ptr { .. } => true,
+            _ => false
+        }
+    }
+
+    pub fn lookup_field(&self, sloc: &SLoc, name: Rc<str>) -> Result<(Type, usize), Error> {
+        let fields = match self {
+            Type::Struct { name: _, fields } => fields,
+            Type::Union { name: _, fields } => fields,
+            other => return Err(Error::Type(sloc.clone(), other.clone(), "struct or union expected"))
+        };
+
+        for (idx, (fname, ftyp)) in fields.iter().enumerate() {
+            if &**fname == &*name {
+                return Ok((ftyp.clone(), idx))
+            }
+        }
+
+        return Err(Error::Type(sloc.clone(), self.clone(), "struct or union does not have such a field"))
+    }
+}
+
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Type::Unknown => write!(f, "???"),
             Type::Void => write!(f, "void"),
+            Type::Bool => write!(f, "bool"),
             Type::Int { bits, signed } => write!(f, "{}int{}_t",
                 if *signed { "" } else { "u" }, bits),
             Type::Ptr { ety, volatile, constant, restrict } => {

@@ -11,16 +11,19 @@ pub struct Function {
     args: Vec<(Rc<str>, Type)>,
     body: Option<Box<Stmt>>,
     is_static: bool,
-    locals: Vec<Rc<LocalDecl>>
+    locals: Vec<Rc<Decl>>
 }
 
 #[allow(dead_code)]
 #[derive(Debug, PartialEq)]
-pub struct LocalDecl {
+pub struct Decl {
     sloc: SLoc,
+    is_argument: bool,
+    is_local: bool,
     name: Rc<str>,
     ty: Type,
-    init: Option<Box<Expr>>
+    init: Option<Box<Expr>>,
+    idx: usize
 }
 
 #[allow(dead_code)]
@@ -28,7 +31,7 @@ pub struct LocalDecl {
 pub enum Stmt {
     NoOp,
     Expr { sloc: SLoc, expr: Box<Expr> },
-    Decls { decls: Vec<LocalDecl> },
+    Decls { decls: Vec<Rc<Decl>> },
     Compound { sloc: SLoc, stmts: Vec<Stmt> },
     While { sloc: SLoc, cond: Box<Expr>, body: Box<Stmt> },
     For { sloc: SLoc, init: Box<Stmt>, cond: Box<Expr>, incr: Box<Stmt>, body: Box<Stmt> },
@@ -51,7 +54,7 @@ pub enum UnaryOp { Neg, LogicalNot, BitwiseNot }
 #[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub enum Expr {
-    Id { sloc: SLoc, typ: Type, name: Rc<str> },
+    Id { sloc: SLoc, typ: Type, name: Rc<str>, decl: Rc<Decl> },
     Int { sloc: SLoc, typ: Type, num: i64 },
     Assign {
         sloc: SLoc, typ: Type, op: Option<BinOp>,
@@ -76,9 +79,9 @@ pub enum Expr {
     },
     FieldAccess {
         sloc: SLoc, typ: Type,
-        obj: Box<Expr>, field: Rc<str>,
+        obj: Box<Expr>, field: Rc<str>, idx: usize
     },
-    Subscript {
+    Subscript { // TODO: Remove, this is just `*(a+offset)`.
         sloc: SLoc, typ: Type,
         ptr: Box<Expr>, offset: Box<Expr>
     },
@@ -122,6 +125,22 @@ impl Display for Expr {
 }
 
 impl Expr {
+    fn get_typ(&self) -> Type {
+        (match self {
+            Expr::Id          { typ, .. } => typ,
+            Expr::Int         { typ, .. } => typ,
+            Expr::Assign      { typ, .. } => typ,
+            Expr::Cast        { typ, .. } => typ,
+            Expr::UnaryOp     { typ, .. } => typ,
+            Expr::BinOp       { typ, .. } => typ,
+            Expr::Call        { typ, .. } => typ,
+            Expr::Deref       { typ, .. } => typ,
+            Expr::FieldAccess { typ, .. } => typ,
+            Expr::Subscript   { typ, .. } => typ,
+            Expr::Tenary      { typ, .. } => typ,
+        }).clone()
+    }
+
     fn binop_to_str(op: BinOp) -> &'static str {
         match op {
             BinOp::Add => "+", BinOp::Sub => "-",
@@ -137,26 +156,62 @@ impl Expr {
             BinOp::LogicalAnd => "&&"
         }
     }
+
+    fn is_cmp(op: BinOp) -> bool {
+        match op {
+            BinOp::EQ | BinOp::NE |
+            BinOp::GE | BinOp::GT |
+            BinOp::LE | BinOp::LT => true,
+            _ => false
+        }
+    }
+
+    fn is_assignable(&self) -> bool {
+        match self {
+            Expr::Id { .. } => true,
+            Expr::Deref { .. } => true,
+            Expr::FieldAccess { .. } => true,
+            _ => false
+        }
+    }
 }
 
-pub struct Parser {}
+pub struct Parser {
+    current_function: Option<Box<Function>>
+}
 
 #[allow(dead_code)]
 impl Parser {
+    fn new() -> Self {
+        Parser { current_function: None }
+    }
+
+    fn lookup(&self, sloc: &SLoc, name: Rc<str>) -> Result<Rc<Decl>, Error> {
+        self.current_function
+            .as_ref().unwrap().locals.iter()
+            .find(|local| &*local.name == &*name)
+            .map(|decl| decl.clone())
+            .ok_or(Error::UnresolvedSymbol(sloc.clone(), name))
+    }
+
     fn parse_function(&mut self, lex: &mut Lexer) -> Result<Box<Function>, Error> {
         let is_static = lex.consume_if_next(Tok::Static)?;
         let retty = self.parse_type(lex)?;
         let (sloc, name) = lex.expect_id("function name")?;
         lex.expect_token(Tok::LParen, "start of function parameter list")?;
         let mut args = Vec::new();
+        let mut locals = Vec::new();
         loop {
             if lex.consume_if_next(Tok::RParen)? {
                 break;
             }
 
             let argty = self.parse_type(lex)?;
-            let argname = lex.expect_id("parameter name")?.1;
-            args.push((argname, argty));
+            let (sloc, name) = lex.expect_id("parameter name")?;
+            args.push((name.clone(), argty.clone()));
+            locals.push(Rc::new(Decl {
+                sloc, is_argument: true, is_local: true, name, ty: argty,
+                init: None, idx: locals.len() }));
             if !lex.consume_if_next(Tok::Comma)? {
                 lex.expect_token(Tok::RParen, "end of parameter list")?;
                 break;
@@ -170,11 +225,15 @@ impl Parser {
             }))
         }
 
-        let body = self.parse_stmt(lex)?;
-        Ok(Box::new(Function {
+        self.current_function = Some(Box::new(Function {
             name, sloc, retty, args,
-            body: Some(body), is_static, locals: Vec::new()
-        }))
+            body: None, is_static, locals
+        }));
+
+        let body = self.parse_stmt(lex)?;
+        let mut f = self.current_function.take().unwrap();
+        f.body = Some(body);
+        Ok(f)
     }
 
     fn parse_stmt(&mut self, lex: &mut Lexer) -> Result<Box<Stmt>, Error> {
@@ -187,12 +246,20 @@ impl Parser {
         if Tok::Return == tok {
             lex.next()?;
             if lex.peek()?.1 == Tok::SemiColon {
+                let expected = self.current_function.as_ref().unwrap().retty.clone();
+                if expected != Type::Void {
+                    return Err(Error::Type(sloc, expected, "expected non-void return"))
+                }
                 lex.next()?;
                 return Ok(Box::new(Stmt::Ret { sloc, val: None }))
             }
 
             let expr = self.parse_expr(lex)?;
             lex.expect_token(Tok::SemiColon, "end of return statement")?;
+            let expected = self.current_function.as_ref().unwrap().retty.clone();
+            if expected != expr.get_typ() {
+                return Err(Error::Type(sloc, expected, "wrong return type"))
+            }
             return Ok(Box::new(Stmt::Ret { sloc, val: Some(expr) }))
         }
 
@@ -210,6 +277,9 @@ impl Parser {
             lex.expect_token(Tok::LParen, "while condition")?;
             let cond = self.parse_expr(lex)?;
             lex.expect_token(Tok::RParen, "while condition")?;
+            if cond.get_typ() != Type::Bool {
+                return Err(Error::Type(sloc, cond.get_typ(), "expected boolean condition for while"))
+            }
             let body = self.parse_stmt(lex)?;
             return Ok(Box::new(Stmt::While { sloc, cond, body }))
         }
@@ -219,6 +289,9 @@ impl Parser {
             lex.expect_token(Tok::LParen, "if condition")?;
             let cond = self.parse_expr(lex)?;
             lex.expect_token(Tok::RParen, "if condition")?;
+            if cond.get_typ() != Type::Bool {
+                return Err(Error::Type(sloc, cond.get_typ(), "expected boolean condition for if"))
+            }
             let then = self.parse_stmt(lex)?;
             let mut otherwise: Option<Box<Stmt>> = None;
             if Tok::Else == lex.peek()?.1 {
@@ -240,15 +313,24 @@ impl Parser {
             Err(e) => return Err(e)
         };
 
-        let mut decls: Vec<LocalDecl> = Vec::new();
+        let mut decls: Vec<Rc<Decl>> = Vec::new();
         loop {
             let (sloc, name) = lex.expect_id("local declaration name")?;
             let init = if lex.consume_if_next(Tok::Assign)? {
-                Some(self.parse_expr(lex)?)
+                let expr = self.parse_expr(lex)?;
+                if expr.get_typ() != ty {
+                    return Err(Error::Type(sloc, expr.get_typ(), "wrong initializer type"))
+                }
+                Some(expr)
             } else {
                 None
             };
-            decls.push(LocalDecl { sloc, name, ty: ty.clone(), init });
+            let ld = Rc::new(Decl {
+                sloc, name, ty: ty.clone(),
+                init, idx: self.current_function.as_ref().unwrap().locals.len(),
+                is_argument: false, is_local: true });
+            decls.push(ld.clone());
+            self.current_function.as_mut().unwrap().locals.push(ld);
             if lex.consume_if_next(Tok::Comma)? {
                 continue;
             }
@@ -269,20 +351,34 @@ impl Parser {
             Tok::AssignSub => Some(Some(BinOp::Sub)),
             _ => None
         } {
+            if !expr.is_assignable() {
+                return Err(Error::Type(sloc, expr.get_typ(), "cannot assign to this expr. kind"))
+            }
+
             lex.next()?;
             let rhs = self.parse_expr(lex)?;
+            if expr.get_typ() != rhs.get_typ() {
+                return Err(Error::Type(sloc, rhs.get_typ(), "both sides of assignment need to be of equal type"))
+            }
             return Ok(Box::new(Expr::Assign {
                 sloc, typ: Type::Unknown, op,
                 lhs: expr, rhs }))
         }
 
         if lex.consume_if_next(Tok::QuestionMark)? {
+            if expr.get_typ() != Type::Bool {
+                return Err(Error::Type(sloc, expr.get_typ(), "expected boolean condition for tenary op."))
+            }
+
             let sloc = lex.peek()?.0;
             let then = self.parse_expr(lex)?;
             lex.expect_token(Tok::Colon, "tenary expression")?;
             let otherwise = self.parse_expr(lex)?;
+            if then.get_typ() != otherwise.get_typ() {
+                return Err(Error::Type(sloc, otherwise.get_typ(), "expected both branches of tenary to have same type"))
+            }
             return Ok(Box::new(Expr::Tenary {
-                sloc, typ: Type::Unknown, cond: expr, then, otherwise }))
+                sloc, typ: then.get_typ(), cond: expr, then, otherwise }))
         }
         Ok(expr)
     }
@@ -315,8 +411,19 @@ impl Parser {
             if prec < min_prec { break }
             let (sloc, _) = lex.next()?;
             let rhs = self.parse_binary_expr(lex, prec + 1)?;
+            let t = lhs.get_typ();
+            if t != rhs.get_typ() {
+                return Err(Error::Type(sloc, t, "different types on sides of boolean expr."))
+            }
+            if (op == BinOp::LogicalOr || op == BinOp::LogicalAnd) && !t.is_bool() {
+                return Err(Error::Type(sloc, t, "'&&' and '||' operands need to be boolean"))
+            }
+            if !(op == BinOp::LogicalOr || op == BinOp::LogicalAnd) && !t.is_numerical() {
+                return Err(Error::Type(sloc, t, "expected operands of numerical type"))
+            }
             lhs = Box::new(Expr::BinOp {
-                sloc, typ: Type::Unknown, op, lhs, rhs });
+                sloc, typ: if Expr::is_cmp(op) { Type::Bool } else { lhs.get_typ() },
+                op, lhs, rhs });
         }
         Ok(lhs)
     }
@@ -324,18 +431,30 @@ impl Parser {
     fn parse_final_expr(&mut self, lex: &mut Lexer) -> Result<Box<Expr>, Error> {
         let (sloc, tok) = lex.next()?;
         let mut expr = match tok {
-            Tok::Minus => Box::new(Expr::UnaryOp {
-                sloc, typ: Type::Unknown, op: UnaryOp::Neg,
-                val: self.parse_final_expr(lex)? }),
-            Tok::LogicalNot => Box::new(Expr::UnaryOp {
-                sloc, typ: Type::Unknown, op: UnaryOp::LogicalNot,
-                val: self.parse_final_expr(lex)? }),
-            Tok::BitwiseNot => Box::new(Expr::UnaryOp {
-                sloc, typ: Type::Unknown, op: UnaryOp::BitwiseNot,
-                val: self.parse_final_expr(lex)? }),
-            Tok::Star => Box::new(Expr::Deref {
-                sloc, typ: Type::Unknown,
-                ptr: self.parse_final_expr(lex)? }),
+            Tok::BitwiseNot => {
+                let val = self.parse_final_expr(lex)?;
+                let typ = val.get_typ();
+                if !typ.is_numerical() {
+                    return Err(Error::Type(sloc, typ, "expected a numerical type"))
+                }
+                Box::new(Expr::UnaryOp { sloc, typ, op: UnaryOp::BitwiseNot, val })
+            },
+            Tok::Minus => {
+                let val = self.parse_final_expr(lex)?;
+                let typ = val.get_typ();
+                if !typ.is_numerical() {
+                    return Err(Error::Type(sloc, typ, "expected a numerical type"))
+                }
+                Box::new(Expr::UnaryOp { sloc, typ, op: UnaryOp::Neg, val })
+            },
+            Tok::Star => {
+                let ptr = self.parse_final_expr(lex)?;
+                let typ = match ptr.get_typ() {
+                    Type::Ptr { ety, .. } => (*ety).clone(),
+                    typ => return Err(Error::Type(sloc, typ, "expected a pointer"))
+                };
+                Box::new(Expr::Deref { sloc, typ, ptr })
+            },
             Tok::LParen => match self.parse_type(lex) {
                 Ok(typ) => {
                     lex.expect_token(Tok::RParen, "cast expression")?;
@@ -353,8 +472,10 @@ impl Parser {
                 sloc, num: val,
                 typ: Type::Int { bits, signed }
             }),
-            Tok::Id(name) => Box::new(Expr::Id {
-                sloc, typ: Type::Unknown, name }),
+            Tok::Id(name) => match self.lookup(&sloc, name.clone()) {
+                Ok(decl) => Box::new(Expr::Id { sloc, typ: decl.ty.clone(), name, decl }),
+                Err(e) => return Err(e)
+            },
             _ => unimplemented!(),
         };
 
@@ -363,17 +484,40 @@ impl Parser {
                 Tok::Dot => {
                     let (sloc, _) = lex.next()?;
                     let field = lex.expect_id("field name")?.1;
-                    Box::new(Expr::FieldAccess {
-                        sloc, typ: Type::Unknown, obj: expr, field })
+                    let (typ, idx) = expr.get_typ().lookup_field(&sloc, field.clone())?;
+                    Box::new(Expr::FieldAccess { sloc, typ, obj: expr, field, idx })
                 },
                 Tok::Arrow => {
                     let (sloc, _) = lex.next()?;
                     let field = lex.expect_id("field name")?.1;
+                    let (styp, (typ, idx)) = match expr.get_typ() {
+                        Type::Ptr { ety, .. } => (ety.clone(), ety.lookup_field(&sloc, field.clone())?),
+                        t => return Err(Error::Type(sloc, t, "expected a pointer to a struct"))
+                    };
                     Box::new(Expr::FieldAccess {
-                        sloc: sloc.clone(),
-                        typ: Type::Unknown,
-                        obj: Box::new(Expr::Deref { sloc, typ: Type::Unknown, ptr: expr }),
-                        field
+                        sloc: sloc.clone(), typ,
+                        obj: Box::new(Expr::Deref { sloc, typ: (*styp).clone(), ptr: expr }),
+                        field, idx })
+                },
+                Tok::LBracket => {
+                    let (sloc, _) = lex.next()?;
+                    let offset = self.parse_expr(lex)?;
+                    lex.expect_token(Tok::RBracket, "closing subscript bracket")?;
+                    if !offset.get_typ().is_numerical() {
+                        return Err(Error::Type(sloc, expr.get_typ(), "expected a numerical offset"))
+                    }
+                    let typ = match expr.get_typ() {
+                        Type::Ptr { ety, .. } => (*ety).clone(),
+                        t => return Err(Error::Type(sloc, t, "expected a pointer"))
+                    };
+                    Box::new(Expr::Deref {
+                        sloc: sloc.clone(), typ,
+                        ptr: Box::new(Expr::BinOp {
+                            sloc, typ: expr.get_typ(),
+                            op: BinOp::Add,
+                            lhs: expr,
+                            rhs: offset
+                        })
                     })
                 },
                 Tok::LParen => {
@@ -390,17 +534,22 @@ impl Parser {
                         break
                     }
 
-                    Box::new(Expr::Call {
-                        sloc, typ: Type::Unknown,
-                        func: expr, args,
-                    })
-                },
-                Tok::LBracket => {
-                    let (sloc, _) = lex.next()?;
-                    let offset = self.parse_expr(lex)?;
-                    lex.expect_token(Tok::RBracket, "closing subscript bracket")?;
-                    Box::new(Expr::Subscript {
-                        sloc, typ: Type::Unknown, ptr: expr, offset })
+                    let typ = match expr.get_typ() {
+                        Type::Fn { retty, argtys } => {
+                            if args.len() != argtys.len() {
+                                return Err(Error::Type(sloc, expr.get_typ(), "wrong number of arguments"))
+                            }
+                            for (a, b) in args.iter().zip(argtys.iter()) {
+                                if a.get_typ() != *b {
+                                    return Err(Error::Type(sloc, b.clone(), "wrong argument type"))
+                                }
+                            }
+                            (*retty).clone()
+                        },
+                        other => return Err(Error::Type(sloc, other, "expected a function"))
+                    };
+
+                    Box::new(Expr::Call { sloc, typ, func: expr, args })
                 },
                 _ => break,
             }
@@ -412,6 +561,7 @@ impl Parser {
     fn parse_type(&mut self, lex: &mut Lexer) -> Result<Type, Error> {
         let mut ty = match lex.next()? {
             (_, Tok::Void) => Type::Void,
+            (_, Tok::Bool) => Type::Bool,
             (_, Tok::Int) => Type::Int { bits: 32, signed: true },
             (_, Tok::Signed) => match lex.peek()?.1 {
                 Tok::Char => {
@@ -513,21 +663,21 @@ mod test {
     fn parse_type(input: &str) -> Type {
         let buf = input.as_bytes().to_vec();
         let mut lex = Lexer::new(std::path::Path::new("text.c"), &buf);
-        let mut p = Parser {};
+        let mut p = Parser::new();
         p.parse_type(&mut lex).unwrap()
     }
 
     fn parse_func(input: &str) -> Box<Function> {
         let buf = input.as_bytes().to_vec();
         let mut lex = Lexer::new(std::path::Path::new("text.c"), &buf);
-        let mut p = Parser {};
+        let mut p = Parser::new();
         p.parse_function(&mut lex).unwrap()
     }
 
     fn parse_expr(input: &str) -> Box<Expr> {
         let buf = input.as_bytes().to_vec();
         let mut lex = Lexer::new(std::path::Path::new("text.c"), &buf);
-        let mut p = Parser {};
+        let mut p = Parser::new();
         p.parse_expr(&mut lex).unwrap()
     }
 
@@ -558,9 +708,9 @@ mod test {
             matches!(&stmts[0],
                 Stmt::Ret { sloc: _, val: Some(x) } if
                     matches!(&**x, Expr::Call { sloc: _, typ: Type::Unknown, func, args } if
-                        matches!(&**func, Expr::Id { sloc: _, typ: _, name } if &**name == "bar") &&
+                        matches!(&**func, Expr::Id { sloc: _, typ: _, name, decl: _ } if &**name == "bar") &&
                         args.len() == 1 &&
-                        matches!(&args[0], Expr::Id { sloc: _, typ: _, name } if &**name == "n"))));
+                        matches!(&args[0], Expr::Id { sloc: _, typ: _, name, decl: _ } if &**name == "n"))));
     }
 
     #[test]
