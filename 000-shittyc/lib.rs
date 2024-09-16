@@ -3,5 +3,4 @@
 mod common;
 mod lex;
 mod ast;
-mod ir;
 mod codegen;

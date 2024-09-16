@@ -154,7 +154,7 @@ impl<'a> CodeGen<'a> {
 
     fn stmt(&mut self, stmt: &Stmt, scratch: &[Reg]) -> Result<(), std::io::Error> {
         match stmt {
-            Stmt::NoOp => Ok(()),
+            Stmt::NoOp {..} => Ok(()),
             Stmt::Compound { stmts, .. } => {
                 for stmt in stmts {
                     self.stmt(stmt, scratch)?;
@@ -178,7 +178,7 @@ mod test {
     use crate::lex::*;
     use crate::ast::*;
 
-    fn parse_func(input: &str) -> Box<Function> {
+    fn parse_func(input: &str) -> Rc<Function> {
         let buf = input.as_bytes().to_vec();
         let mut lex = Lexer::new(std::path::Path::new("text.c"), &buf);
         let mut p = Parser::new();
