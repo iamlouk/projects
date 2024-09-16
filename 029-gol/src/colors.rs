@@ -1,24 +1,16 @@
+use crate::CACell;
 use rand::Rng;
-
-use crate::CA;
 
 pub type Cell = (bool, f32, f32, f32);
 
-pub struct Colors;
-
-impl Colors {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-impl CA<Cell> for Colors {
-    fn initialize(&self, rng: &mut rand::prelude::ThreadRng, _x: i64, _y: i64) -> Cell {
+impl CACell for Cell {
+    fn init(&mut self, rng: &mut rand::prelude::ThreadRng, _x: i64, _y: i64) {
         if rng.gen_bool(0.999) {
-            return (false, 0., 0., 0.);
+            *self = (false, 0., 0., 0.);
+            return;
         }
 
-        (
+        *self = (
             true,
             rng.gen_range(0f32..1.),
             rng.gen_range(0f32..1.),
@@ -26,11 +18,11 @@ impl CA<Cell> for Colors {
         )
     }
 
-    fn render(&self, cell: Cell) -> sdl2::pixels::Color {
+    fn render(&self) -> sdl2::pixels::Color {
         sdl2::pixels::Color::RGB(
-            (cell.1 * 255.) as u8,
-            (cell.2 * 255.) as u8,
-            (cell.3 * 255.) as u8,
+            (self.1 * 255.) as u8,
+            (self.2 * 255.) as u8,
+            (self.3 * 255.) as u8,
         )
     }
 
@@ -38,12 +30,11 @@ impl CA<Cell> for Colors {
         &self,
         x: i64,
         y: i64,
-        cell: Cell,
         get_cell: impl Fn(i64, i64) -> Cell,
         _: &mut rand::prelude::ThreadRng,
     ) -> Cell {
-        if cell.0 {
-            return cell;
+        if self.0 {
+            return *self;
         }
 
         let (active1, r1, g1, b1) = get_cell(x, y - 1);
@@ -52,7 +43,7 @@ impl CA<Cell> for Colors {
         let (active4, r4, g4, b4) = get_cell(x + 1, y);
         let num_active = active1 as i32 + active2 as i32 + active3 as i32 + active4 as i32;
         if num_active == 0 {
-            return cell;
+            return *self;
         }
 
         let f = (4 - num_active) as f32 * 0.25 * 1.01;
