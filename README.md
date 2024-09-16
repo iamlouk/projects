@@ -74,3 +74,10 @@ Tags: __*HTML*__, __*JS*__, __*Game*__
 
 A simple Jump&Run in plain vanilla JS using HTML5 canvas. Images from [this asset pack](https://jesse-m.itch.io/jungle-pack) where used.
 
+### 012: [Very Bad Vectorizer](./012-very-bad-vectorizer)
+
+Tags: __*C++*__, __*LLVM*__
+
+This is probably one of the best ones yet. It is a auto-vectorizer for LLVM and has it's own [README](./012-very-bad-vectorizer/README.md).
+
+
