@@ -16,13 +16,13 @@ Deno.test(function hr() {
 Deno.test(function inline() {
   assertEquals(
     toHTML("this __is__ *a* [example](http://example.com) of a `code block`? __*Wooh*__!"),
-    'this <b>is</b> <i>a</i> <a href="http://example.com">example</a> of a <code>code block</code>? <b><i>Wooh</i></b>!');
+    '<p>this <b>is</b> <i>a</i> <a href="http://example.com">example</a> of a <code>code block</code>? <b><i>Wooh</i></b>!</p>\n');
 });
 
 Deno.test(function code() {
   assertEquals(
-    toHTML("hello\n```\nfoo\n```\nworld"),
-    `hello\n<div class="highlight" data-lang=""><div><b class="ln">1</b></div>\n<div><pre>\n<b class="id">foo</b>\n</pre></div></div>\n\nworld`);
+    toHTML("hello\n\n```\nfoo\n```\n\nworld"),
+    `<p>hello</p>\n\n<div class="highlight" data-lang=""><div><b class="ln">1</b></div>\n<div><pre>\n<b class="id">foo</b>\n</pre></div></div>\n\n<p>world</p>\n`);
 });
 
 Deno.test(function list() {
@@ -40,7 +40,6 @@ Deno.test(function list() {
 - hello
   world
   - six
-
 `),
-    ``);
+    `<h1>A list...</h1>\n\n<ul>\n<li>foo</li>\n<li>bar\n<ul>\n<li>one</li>\n<li>two\n<ul>\n<li>three</li>\n<li>four</li>\n</ul>\n</li>\n<li>five</li>\n</ul>\n</li>\n<li>hello world\n<ul>\n<li>six</li>\n</ul>\n</li>\n</ul>\n`);
 });

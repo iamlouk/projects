@@ -2,6 +2,10 @@ import * as code from "../039-syntax-highlight/main.ts"
 
 const isWhitespace = (c: string) => /^\s+$/.test(c);
 
+const normalizeWhitespace = (s: string): string => {
+  return s.replace(/\s\s+/g, ' ');
+}
+
 const countLeadingWhitespace = (s: string): number => s.length - s.trimStart().length
 
 function parseLink(text: string, html: string[]): number {
@@ -31,14 +35,14 @@ function parseInline(text: string, html: string[]): boolean {
     const c = text.charAt(i);
     const newword = i == 0 || isWhitespace(text.charAt(i - 1));
     if (newword && c == '[') {
-      html.push(text.substring(j, i));
+      html.push(normalizeWhitespace(text.substring(j, i)));
       i += parseLink(text.substring(i), html);
       j = i;
       continue;
     }
 
     if (newword && c == '`') {
-      html.push(text.substring(j, i));
+      html.push(normalizeWhitespace(text.substring(j, i)));
       i += 1;
       let idx = text.indexOf('`', i);
       if (idx == -1)
@@ -51,7 +55,7 @@ function parseInline(text: string, html: string[]): boolean {
     }
 
     if (newword && c == '*') {
-      html.push(text.substring(j, i));
+      html.push(normalizeWhitespace(text.substring(j, i)));
       i += 1;
       let idx = text.indexOf('*', i);
       if (idx == -1)
@@ -66,7 +70,7 @@ function parseInline(text: string, html: string[]): boolean {
     }
 
     if (newword && c == '_' && text.charAt(i + 1) == '_') {
-      html.push(text.substring(j, i));
+      html.push(normalizeWhitespace(text.substring(j, i)));
       i += 2;
       let idx = text.indexOf('__', i);
       if (idx == -1)
@@ -84,7 +88,7 @@ function parseInline(text: string, html: string[]): boolean {
   }
 
   if (i != j)
-    html.push(text.substring(j, i));
+    html.push(normalizeWhitespace(text.substring(j, i)));
   return true;
 }
 
@@ -177,7 +181,7 @@ function parseList(i: number, lines: string[], html: string[]): number {
 export function toHTML(text: string): string {
   const lines = text.split('\n');
   const html: string[] = [];
-  let afterNewLine = true, i = 0, j = 0;
+  let afterNewLine = true, inParagraph = false, i = 0, j = 0;
   for (i = 0; i < lines.length; i += 1) {
     const line = lines[i];
     if (parseHeading(line, html))
@@ -196,18 +200,25 @@ export function toHTML(text: string): string {
       continue;
     }
 
-    const trim = line.trim();
-    if (trim.length == 0) {
-      afterNewLine = true;
-      continue;
-    } else {
+    const newline = line.trim().length == 0;
+    if (!newline && afterNewLine && !inParagraph) {
       afterNewLine = false;
+      inParagraph = true;
+      html.push(`<p>`);
+    } else if (newline && inParagraph) {
+      afterNewLine = true;
+      inParagraph = false;
+      html.push(`</p>\n`);
+      continue;
+    } else if (!newline && !afterNewLine) {
+      html.push(' ');
     }
 
     parseInline(line, html);
-
-    // throw new Error("unimplemented");
   }
+
+  if (inParagraph)
+    html.push(`</p>\n`);
   return html.join('');
 }
 
