@@ -22,10 +22,7 @@
  * TODO: - By default, libfuse will multi-thread. If there will be a caching
  *         mechanism, then I need locking!
  * TODO: - A lot of error handling etc. is missing!
- *
- *
- *
- *
+ * TODO: - Add open/close/read/write of files.
  *
  *
  */
@@ -338,6 +335,20 @@ static int op_unlink(const char *path) { return helper_remove(path, 0); }
 
 static int op_rmdir(const char *path) {
   return helper_remove(path, AT_REMOVEDIR);
+}
+
+#define UOLAYFS_FILE_MAGIC 0x1122334455667788
+struct uolayfs_file {
+  u_int64_t magic;
+  uint64_t handle;
+  int fd;
+  int dirfd;
+};
+
+static struct uolayfs_file *uolayfs_file_from_fi(struct fuse_file_info *fi) {
+  struct uolayfs_file *ptr = (struct uolayfs_file *)(fi->fh);
+  assert(ptr->magic == UOLAYFS_FILE_MAGIC);
+  return ptr;
 }
 
 static const struct fuse_operations fs_ops = {.getattr = &op_getattr,

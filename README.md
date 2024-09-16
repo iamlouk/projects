@@ -212,3 +212,9 @@ Tags: __*Hare*__, __*Go*__, __*WebSocket*__
 
 This is a from-scratch implementation of the [WebSocket protocol (RFC6455)](https://datatracker.ietf.org/doc/html/rfc6455), only using the stdlib, in both Golang and the Hare programming language. The Golang version is a simple echo service, the Hare impl. is more flexible and implements a basic chatroom. It is only a simple subset of the server side of the protocol. For anything serious, there is [golang.org/x/net/websocket](https://pkg.go.dev/golang.org/x/net/websocket), which I used to test my server against. The directory also contains a simple TCP echo server in Hare. *TODO*: Use [hare-ev](https://git.sr.ht/~sircmpwn/hare-ev) to avoid blocking IO in the websocket server?
 
+### 035: [FUSE version of a overlay FS](./035-fuse-overlayfs/)
+
+Tags: __*C*__, __*FUSE*__
+
+In a past job, I worked with union/overlay file systems like [overlayfs](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/fs/overlayfs). They are extremely useful sometimes. This project is a extremely incomplete (at the time of writing, creating and deleting files and directories works, but no read/write of actual files) and shitty version of such a file system where you have a underlying and a overlay directory. The underlying one is never changed, all changes are represented in the overlay dir.
+
