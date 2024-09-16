@@ -1,0 +1,8 @@
+-Wall
+-Wextra
+-Wno-unused-function
+-xc
+--target=aarch64-linux-gnu
+-march=armv8-a+sve+sve2
+-O1
+-DTEST=1
