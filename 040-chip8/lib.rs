@@ -50,8 +50,8 @@ pub enum Instr {
 impl Instr {
     #[allow(dead_code)]
     fn decode(addr: usize, mem: &[u8]) -> Result<Instr, &'static str> {
-        let b0 = mem[addr+0];
-        let b1 = mem[addr+1];
+        let b0 = mem[addr];
+        let b1 = mem[addr + 1];
         let nnn = (((b0 as u16) & 0xf) << 8) | (b1 as u16);
         let x = (b0 & 0xf) as VReg;
         let y = ((b1 >> 4) & 0xf) as VReg;
@@ -59,7 +59,7 @@ impl Instr {
             0x0 => match nnn {
                 0x0E0 => Instr::CLS,
                 0x0EE => Instr::RET,
-                nnn => Instr::SYS { addr: nnn }
+                nnn => Instr::SYS { addr: nnn },
             },
             0x1 => Instr::JP { addr: nnn },
             0x2 => Instr::CALL { addr: nnn },
@@ -78,11 +78,11 @@ impl Instr {
                 0x6 => Instr::SHR { x, y },
                 0x7 => Instr::SUBN { x, y },
                 0xE => Instr::SHL { x, y },
-                _ => return Err("invalid instruction with 0x8??? encoding.")
+                _ => return Err("invalid instruction with 0x8??? encoding."),
             },
             0x9 => match b1 & 0xf {
                 0x0 => Instr::SNE_REG { x, y },
-                _ => return Err("invalid instruction with 0x9??? encoding.")
+                _ => return Err("invalid instruction with 0x9??? encoding."),
             },
             0xA => Instr::LD_I { addr: nnn },
             0xB => Instr::JP_V0 { offset: nnn },
@@ -91,7 +91,7 @@ impl Instr {
             0xE => match b1 {
                 0x9E => Instr::SKP { x },
                 0xA1 => Instr::SKNP { x },
-                _ => return Err("invalid instruction with encoding 0xE???")
+                _ => return Err("invalid instruction with encoding 0xE???"),
             },
             0xF => match b1 {
                 0x07 => Instr::LD_DT { dst: x },
@@ -103,21 +103,32 @@ impl Instr {
                 0x33 => Instr::LD_BCD { num: x },
                 0x55 => Instr::LD_REGS_TO_I { upto: x },
                 0x65 => Instr::LD_REGS_TO_I { upto: x },
-                _ => return Err("invalid instruction with encoding 0xF???")
+                _ => return Err("invalid instruction with encoding 0xF???"),
             },
-            _ => unreachable!()
+            _ => unreachable!(),
         })
     }
 
+    #[allow(dead_code)]
     fn fmt(vreg: VReg, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match vreg {
-            0x0 => "v0", 0x1 => "v1", 0x2 => "v2",
-            0x3 => "v3", 0x4 => "v4", 0x5 => "v5",
-            0x6 => "v6", 0x7 => "v7", 0x8 => "v8",
-            0x9 => "v9", 0xA => "vA", 0xB => "vB",
-            0xC => "vC", 0xD => "vD", 0xE => "vE",
+            0x0 => "v0",
+            0x1 => "v1",
+            0x2 => "v2",
+            0x3 => "v3",
+            0x4 => "v4",
+            0x5 => "v5",
+            0x6 => "v6",
+            0x7 => "v7",
+            0x8 => "v8",
+            0x9 => "v9",
+            0xA => "vA",
+            0xB => "vB",
+            0xC => "vC",
+            0xD => "vD",
+            0xE => "vE",
             0xF => "F",
-            _ => "<invalid V reg.>"
+            _ => "<invalid V reg.>",
         })
     }
 }
@@ -138,7 +149,9 @@ pub trait UI {
     fn clear_screen(&mut self);
     fn draw_pixel(&mut self, x: usize, y: usize, val: bool);
     fn update(&mut self, cycle: u64, dt: std::time::Duration) -> Result<bool, &'static str>;
-    fn rnd(&mut self) -> u8 { rand::thread_rng().gen() }
+    fn rnd(&mut self) -> u8 {
+        rand::thread_rng().gen()
+    }
 }
 
 #[allow(dead_code)]
@@ -146,7 +159,7 @@ pub struct Chip8State {
     v_regs: [u8; 16],
     memory: [u8; 0x1000],
     display: [[bool; 64]; 32],
-    ui: Box<dyn UI>,
+    pub ui: Box<dyn UI>,
     pc: u16,
     idx_reg: u16,
     sound_timer: u8,
@@ -154,7 +167,7 @@ pub struct Chip8State {
     stack: Vec<u16>,
     digit_sprites: [u16; 16],
     last_frame: std::time::Instant,
-    cycles: u64
+    cycles: u64,
 }
 
 #[allow(dead_code)]
@@ -172,13 +185,11 @@ impl Chip8State {
             stack: Vec::with_capacity(16),
             digit_sprites: [0; 16],
             last_frame: std::time::Instant::now(),
-            cycles: 0
+            cycles: 0,
         });
         fn store_digit(pos: usize, sprite: &[u8], memory: &mut [u8]) -> usize {
-            for i in 0..sprite.len() {
-                memory[pos + i] = sprite[i];
-            }
-            return pos + sprite.len();
+            memory[pos..(sprite.len() + pos)].copy_from_slice(sprite);
+            pos + sprite.len()
         }
         let mut pos: usize = 0x050;
         ch8.digit_sprites[0] = pos as u16;
@@ -248,21 +259,23 @@ impl Chip8State {
                     }
                 }
                 self.ui.clear_screen()
-            },
+            }
             Instr::RET => match self.stack.pop() {
                 Some(addr) => self.pc = addr,
-                None => return Err("ret from empty stack")
+                None => return Err("ret from empty stack"),
             },
-            Instr::JP { addr } => if self.pc - 2 == addr {
-                return Err("busy wait")
-            } else {
-                self.pc = addr
-            },
+            Instr::JP { addr } => {
+                if self.pc - 2 == addr {
+                    return Err("busy wait");
+                } else {
+                    self.pc = addr
+                }
+            }
             Instr::JP_V0 { offset } => self.pc = self.v_regs[0] as u16 + offset,
             Instr::CALL { addr } => {
                 self.stack.push(self.pc);
                 self.pc = addr;
-            },
+            }
             Instr::MV { dst, src } => self.v_regs[dst as usize] = self.v_regs[src as usize],
             Instr::LD_IMM { dst, imm } => self.v_regs[dst as usize] = imm,
             Instr::LD_I { addr } => self.idx_reg = addr,
@@ -275,37 +288,54 @@ impl Chip8State {
                 }
                 // Retry later...
                 self.pc -= 2;
-                std::thread::yield_now();
-            },
-            Instr::LD_SPRITE { digit } => if digit < 16 {
-                self.idx_reg = self.digit_sprites[self.v_regs[digit as usize] as usize];
-            } else {
-                return Err("'LD F, Vx' with a Vx out of bounds")
-            },
+            }
+            Instr::LD_SPRITE { digit } => {
+                if digit < 16 {
+                    self.idx_reg = self.digit_sprites[self.v_regs[digit as usize] as usize];
+                } else {
+                    return Err("'LD F, Vx' with a Vx out of bounds");
+                }
+            }
             Instr::LD_BCD { num } => {
                 let num = self.v_regs[num as usize];
-                self.memory[self.idx_reg as usize + 0] = (num / 100) as u8;
-                self.memory[self.idx_reg as usize + 1] = (num / 10) as u8;
-                self.memory[self.idx_reg as usize + 2] = (num % 10) as u8;
-            },
+                self.memory[self.idx_reg as usize] = num / 100;
+                self.memory[self.idx_reg as usize + 1] = num / 10;
+                self.memory[self.idx_reg as usize + 2] = num % 10;
+            }
             Instr::LD_REGS_TO_I { upto } => {
                 let pos = self.idx_reg as usize;
                 for i in 0..=(upto as usize) {
                     self.memory[pos + i] = self.v_regs[i];
                 }
-            },
+            }
             Instr::LD_I_TO_REGS { upto } => {
                 let pos = self.idx_reg as usize;
                 for i in 0..=(upto as usize) {
                     self.v_regs[i] = self.memory[pos + i];
                 }
-            },
-            Instr::SET_DT { x } => self.delay_timer = self.v_regs[x as usize] as u8,
-            Instr::SET_ST { x } => self.sound_timer = self.v_regs[x as usize] as u8,
-            Instr::SE_IMM { x, imm } => if self.v_regs[x as usize] == imm { self.pc += 2 },
-            Instr::SNE_IMM { x, imm } => if self.v_regs[x as usize] != imm { self.pc += 2 },
-            Instr::SE_REG { x, y } => if self.v_regs[x as usize] == self.v_regs[y as usize] { self.pc += 2 },
-            Instr::SNE_REG { x, y } => if self.v_regs[x as usize] != self.v_regs[y as usize] { self.pc += 2 },
+            }
+            Instr::SET_DT { x } => self.delay_timer = self.v_regs[x as usize],
+            Instr::SET_ST { x } => self.sound_timer = self.v_regs[x as usize],
+            Instr::SE_IMM { x, imm } => {
+                if self.v_regs[x as usize] == imm {
+                    self.pc += 2
+                }
+            }
+            Instr::SNE_IMM { x, imm } => {
+                if self.v_regs[x as usize] != imm {
+                    self.pc += 2
+                }
+            }
+            Instr::SE_REG { x, y } => {
+                if self.v_regs[x as usize] == self.v_regs[y as usize] {
+                    self.pc += 2
+                }
+            }
+            Instr::SNE_REG { x, y } => {
+                if self.v_regs[x as usize] != self.v_regs[y as usize] {
+                    self.pc += 2
+                }
+            }
             Instr::OR { x, y } => self.v_regs[x as usize] |= self.v_regs[y as usize],
             Instr::AND { x, y } => self.v_regs[x as usize] &= self.v_regs[y as usize],
             Instr::XOR { x, y } => self.v_regs[x as usize] ^= self.v_regs[y as usize],
@@ -315,7 +345,7 @@ impl Chip8State {
                 let res = v1 + v2;
                 self.v_regs[x as usize] = (res & 0xFF) as u8;
                 self.v_regs[0xF] = (res > 0xFF) as u8;
-            },
+            }
             Instr::ADD_IMM { dst, imm } => self.v_regs[dst as usize] += imm,
             Instr::ADD_I { x } => self.idx_reg += self.v_regs[x as usize] as u16,
             Instr::SUB { x, y } => {
@@ -323,26 +353,26 @@ impl Chip8State {
                 let v2 = self.v_regs[y as usize] as u16;
                 self.v_regs[x as usize] = ((v1 - v2) & 0xFF) as u8;
                 self.v_regs[0xF] = (v1 > v2) as u8;
-            },
+            }
             Instr::SHR { x, y: _ } => {
                 let v1 = self.v_regs[x as usize];
                 self.v_regs[0xF] = v1 & 0x1;
                 self.v_regs[x as usize] = v1 >> 1;
-            },
+            }
             Instr::SUBN { x, y } => {
                 let v1 = self.v_regs[x as usize] as u16;
                 let v2 = self.v_regs[y as usize] as u16;
                 self.v_regs[x as usize] = ((v2 - v1) & 0xFF) as u8;
                 self.v_regs[0xF] = (v2 > v1) as u8;
-            },
+            }
             Instr::SHL { x, y: _ } => {
                 let v1 = self.v_regs[x as usize];
                 self.v_regs[0xF] = ((v1 & 0x80) != 0) as u8;
                 self.v_regs[x as usize] = v1 << 1;
-            },
+            }
             Instr::RND { dst, mask } => {
                 self.v_regs[dst as usize] = self.ui.rnd() & mask;
-            },
+            }
             Instr::DRW { x, y, n } => {
                 let x = self.v_regs[x as usize] as usize;
                 let y = self.v_regs[y as usize] as usize;
@@ -354,7 +384,7 @@ impl Chip8State {
                         let x = (x + col) % 64;
                         let y = (y + row) % 32;
                         if (b & (0x80u8 >> col)) == 0 {
-                            continue
+                            continue;
                         }
 
                         let prev_pixel = self.display[y][x];
@@ -365,12 +395,16 @@ impl Chip8State {
                     }
                 }
                 self.v_regs[0xF] = pixel_erased as u8;
-            },
-            Instr::SKP { x } => if self.ui.is_key_pressed(self.v_regs[x as usize]) {
-                self.pc += 2
             }
-            Instr::SKNP { x } => if !self.ui.is_key_pressed(self.v_regs[x as usize]) {
-                self.pc += 2
+            Instr::SKP { x } => {
+                if self.ui.is_key_pressed(self.v_regs[x as usize]) {
+                    self.pc += 2
+                }
+            }
+            Instr::SKNP { x } => {
+                if !self.ui.is_key_pressed(self.v_regs[x as usize]) {
+                    self.pc += 2
+                }
             }
         }
         Ok(self.pc)
