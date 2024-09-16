@@ -98,4 +98,9 @@ Tags: __*DWARF*__, __*libelfin*__, __*QEMU*__
 
 This is a very simple very basic QEMU [TCG Plugin](https://qemu.readthedocs.io/en/latest/devel/tcg-plugins.html) for user mode emulation. Like everything here it is only a proof-of-concept, and though it works, it could be improved in a lot of ways. It uses [libelfin](https://github.com/aclements/libelfin) to parse the debug information of the emulated binary, tracks how often every translation block was executed, maps translation blocks to source file line numbers, and prints the line numbers of the most executed pieces of code at the end of the emulation.
 
+### 018: [Go SSH App](./018-ssh-snake)
+
+Tags: __*Golang*__, __*SSH*__
+
+Golang is a cool language for networking applications because of builtin channels and the great standard library. There is a SSH server and client implementation for Go ([golang.org/x/crypto/ssh](https://pkg.go.dev/golang.org/x/crypto/ssh)) which can be used for basically anything, not just remote terminals. This project contains a SSH server that one can connect to (e.g. via `ssh -p 2022 localhost`) where the different users can play a snake-like game on the same plane.
 
