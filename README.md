@@ -26,3 +26,9 @@ Tags: __*Python*__, __*Statistics*__
 
 Calculate percentiles with better time complexity than sorting using _kth element_.
 
+### [Hashmaps in Rust](./005-rust-hashmaps)
+
+Tags: __*Rust*__, __*Data Structures*__
+
+Open and closed addressing hashmaps with some simple optimizations written in Rust.
+
