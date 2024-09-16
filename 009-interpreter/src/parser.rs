@@ -64,6 +64,8 @@ impl<'input> Parser<'input> {
             (Tok::Colon(_), Tok::Colon(_)) => Ok(()),
             (Tok::Comma(_), Tok::Comma(_)) => Ok(()),
             (Tok::In(_), Tok::In(_)) => Ok(()),
+            (Tok::Then(_), Tok::Then(_)) => Ok(()),
+            (Tok::Else(_), Tok::Else(_)) => Ok(()),
             (Tok::Assign(_), Tok::Assign(_)) => Ok(()),
             (tok, expected) => Err(Error::UnexpectedToken(tok, expected))
         }
@@ -84,8 +86,12 @@ impl<'input> Parser<'input> {
                 }
             },
             Some(&Tok::If(pos)) => {
-                _ = pos;
-                unimplemented!()
+                let cond = self.parse_expr_lvl1(0)?;
+                self.expect(Tok::Then(NULLPOS))?;
+                let iftrue = self.parse_expr_lvl1(0)?;
+                self.expect(Tok::Else(NULLPOS))?;
+                let iffalse = self.parse_expr_lvl1(0)?;
+                Ok(Node::If(Metadata{ pos, ttype: Type::Unkown }, Box::new(cond), Box::new(iftrue), Box::new(iffalse)))
             },
             _ => self.parse_expr_lvl1(0)
         }

@@ -42,7 +42,7 @@ pub enum Node {
     BinOp(Metadata, BinOp, Box<Node>, Box<Node>),
     Call(Metadata, Box<Node>, Vec<Node>),
     LetIn(Metadata, Rc<String>, Box<Node>, Box<Node>),
-    IfThenElse(Metadata, Box<Node>, Box<Node>, Box<Node>),
+    If(Metadata, Box<Node>, Box<Node>, Box<Node>),
     Lambda(Metadata, Vec<(Rc<String>, Type)>, Box<Node>)
 }
 
@@ -71,6 +71,16 @@ impl Node {
                 ea.to_string(out)?;
                 out.push_str(" in ");
                 eb.to_string(out)
+            },
+            Self::If(_, cond, iftrue, iffalse) => {
+                out.push_str("(if (");
+                cond.to_string(out)?;
+                out.push_str(") then (");
+                iftrue.to_string(out)?;
+                out.push_str(") else (");
+                iffalse.to_string(out)?;
+                out.push_str(")");
+                Ok(())
             },
             _ => unimplemented!()
         }
