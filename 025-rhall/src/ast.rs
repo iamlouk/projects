@@ -1,7 +1,7 @@
 use std::fmt;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::core::{Error, SLoc, Type, TypeParam, Value};
+use crate::core::{Error, SLoc, Type, Value};
 use crate::eval::Env;
 use crate::lex::{Lexer, Tok};
 
@@ -161,6 +161,16 @@ impl Node {
         match self {
             Node::Id { typ: Some(t), .. } => Ok(t.clone()),
             Node::Id { sloc, typ, name } => match env.lookup(name) {
+                Some(Value::Type(t)) if *t == Type::TypeOfType => {
+                    let t = env.type_type.clone();
+                    *typ = Some(t.clone());
+                    Ok(t)
+                }
+                Some(Value::Type(t)) if *t != Type::TypeOfType => {
+                    let t = Rc::new(Type::TypeOf(t));
+                    *typ = Some(t.clone());
+                    Ok(t)
+                }
                 Some(v) => {
                     let t = v.get_type(env);
                     *typ = Some(t.clone());
@@ -168,10 +178,7 @@ impl Node {
                 }
                 None => Err(Error::TypeError(
                     *sloc,
-                    format!(
-                        "unknown: {} (if this is a recursive function, add a type annotation)",
-                        name.as_ref()
-                    ),
+                    format!("undefined id: {}", name.as_ref()),
                 )),
             },
             Node::Integer { typ: Some(t), .. } => Ok(t.clone()),
@@ -198,23 +205,32 @@ impl Node {
                 typ,
                 op0,
                 rawtyp,
-            } => {
-                let hint = rawtyp.typecheck_type(env, None, *sloc, "type annotation")?;
-                let optyp = op0.typecheck(env, Some(hint.clone()))?;
-                if optyp.as_ref() != hint.as_ref() {
-                    return Err(Error::TypeError(
-                        *sloc,
-                        format!("type conflict: {} vs {}", optyp.as_ref(), hint.as_ref()),
-                    ));
+            } => match rawtyp.typecheck(env, None)?.as_ref() {
+                Type::TypeOf(t) => {
+                    let op0t = op0.typecheck(env, Some(t.clone()))?;
+                    if *op0t != **t {
+                        return Err(Error::TypeError(
+                            *sloc,
+                            format!(
+                                "{} expected to be of type {}, found {}",
+                                op0,
+                                t,
+                                op0t.as_ref()
+                            ),
+                        ));
+                    }
+                    *typ = Some(op0t.clone());
+                    Ok(op0t)
                 }
-
-                *typ = Some(optyp.clone());
-                Ok(optyp)
-            }
+                other => Err(Error::TypeError(
+                    *sloc,
+                    format!("expected a type, found {} ({:?})", other, other),
+                )),
+            },
             Node::Invert { typ: Some(t), .. } => Ok(t.clone()),
             Node::Invert { sloc, typ, op0 } => {
                 let t = op0.typecheck(env, None)?;
-                if *t.as_ref() != Type::Boolean && *t.as_ref() != Type::Integer {
+                if *t != Type::Boolean && *t != Type::Integer {
                     return Err(Error::TypeError(
                         *sloc,
                         format!("invalid type for '~' operator: {}", t),
@@ -255,50 +271,16 @@ impl Node {
                         ))
                     }
                     (_, false, Type::Integer) => lhsty,
-                    _ => unimplemented!(),
+                    (op, _, _) => panic!(
+                        "binop error: {:?} {:?} {:?}",
+                        lhsty.as_ref(),
+                        op,
+                        rhsty.as_ref()
+                    ),
                 };
                 *typ = Some(t.clone());
                 Ok(t)
             }
-            Node::Call { typ: Some(t), .. } => Ok(t.clone()),
-            Node::Call {
-                sloc,
-                typ,
-                callable,
-                args,
-            } => match callable.typecheck(env, None)?.as_ref() {
-                Type::Lambda(argtypes, rettyp) if argtypes.len() == args.len() => {
-                    let mut rettyp = rettyp.clone();
-                    for (arg, (_, typ)) in args.iter_mut().zip(argtypes.iter()) {
-                        let t = arg.typecheck(env, None)?;
-                        /* These error messages are horrible and the checks probably far from perfect! */
-                        if let Type::Type(Some(tp), _) = typ.as_ref() {
-                            let Type::Type(_, Some(argt)) = t.as_ref() else {
-                                return Err(Error::TypeError(*sloc, format!("lambda call: expected a type parameter, not {}", t.as_ref())));
-                            };
-
-                            rettyp = rettyp.subst(tp, argt);
-                            continue;
-                        }
-
-                        if t.as_ref() != typ.as_ref() {
-                            return Err(Error::TypeError(
-                                *sloc,
-                                format!(
-                                    "argument has wrong type: {} has type {}, expected {}",
-                                    arg, t, typ
-                                ),
-                            ));
-                        }
-                    }
-                    *typ = Some(rettyp.clone());
-                    Ok(rettyp)
-                }
-                t => Err(Error::TypeError(
-                    *sloc,
-                    format!("cannot call: {} (type: {})", callable.as_ref(), t),
-                )),
-            },
             Node::IfThenElse { typ: Some(t), .. } => Ok(t.clone()),
             Node::IfThenElse {
                 sloc,
@@ -308,7 +290,7 @@ impl Node {
                 op2,
             } => {
                 let op0ty = op0.typecheck(env, None)?;
-                if op0ty.as_ref() != &Type::Boolean {
+                if *op0ty != Type::Boolean {
                     return Err(Error::TypeError(
                         *sloc,
                         format!(
@@ -320,7 +302,7 @@ impl Node {
 
                 let op1ty = op1.typecheck(env, None)?;
                 let op2ty = op2.typecheck(env, None)?;
-                if op1ty.as_ref() != op2ty.as_ref() {
+                if *op1ty != *op2ty {
                     return Err(Error::TypeError(
                         *sloc,
                         format!(
@@ -331,51 +313,8 @@ impl Node {
                     ));
                 }
 
-                *typ = Some(op1ty);
-                Ok(op2ty)
-            }
-            Node::LetIn { typ: Some(t), .. } => Ok(t.clone()),
-            Node::LetIn {
-                typ,
-                name,
-                value,
-                typeannot: None,
-                body,
-                ..
-            } => {
-                let valtyp = value.typecheck(env, None)?;
-                env.push(name, Value::Pseudo(valtyp));
-                let bodytyp = body.typecheck(env, None)?;
-                env.pop(1);
-                *typ = Some(bodytyp.clone());
-                Ok(bodytyp)
-            }
-            Node::LetIn {
-                sloc,
-                typ,
-                name,
-                value,
-                typeannot: Some(rawtypeannot),
-                body,
-            } => {
-                let valtyphint = rawtypeannot.typecheck_type(env, None, *sloc, "let-in")?;
-                env.push(name, Value::Pseudo(valtyphint.clone()));
-                let valtyp = value.typecheck(env, Some(valtyphint.clone()))?;
-                if valtyphint.as_ref() != valtyp.as_ref() {
-                    println!("{:?}", env.locals);
-                    return Err(Error::TypeError(
-                        *sloc,
-                        format!(
-                            "computed type: {}, expected: {} ({:?}, {:?})",
-                            valtyp.as_ref(), valtyphint.as_ref(),
-                            valtyp.as_ref(), valtyphint.as_ref()
-                        ),
-                    ));
-                }
-                let bodytyp = body.typecheck(env, None)?;
-                env.pop(1);
-                *typ = Some(bodytyp.clone());
-                Ok(bodytyp)
+                *typ = Some(op1ty.clone());
+                Ok(op1ty)
             }
             Node::Lambda { typ: Some(t), .. } => Ok(t.clone()),
             Node::Lambda {
@@ -383,35 +322,37 @@ impl Node {
                 typ,
                 args,
                 body,
-                ..
             } => {
-                for (name, argtyp, rawargtyp) in args.iter_mut() {
-                    let t = rawargtyp.typecheck_type(env, None, *sloc, "lambda (argument)")?;
+                let mut arg_types = Vec::with_capacity(args.len());
+                for (arg_name, arg_typ, arg_typ_ast) in args.iter_mut() {
+                    let t = arg_typ_ast.typecheck(env, None)?;
                     match t.as_ref() {
-                        Type::Type(None, None) => {
-                            let tp = TypeParam {
-                                name: name.clone(),
-                                id: sloc.hash(),
-                            };
-                            let gent = Rc::new(Type::Generic(tp.clone()));
-                            *argtyp = Some(Rc::new(Type::Type(Some(tp), None)));
-                            env.push(name, Value::Pseudo(gent));
+                        Type::TypeOfType => {
+                            *arg_typ = Some(t.clone());
+                            arg_types.push((arg_name.clone(), t.clone()));
+                            let ph = Rc::new(Type::Placeholder(arg_name.clone()));
+                            env.push(arg_name, Value::Type(ph));
+                        }
+                        Type::TypeOf(t) => {
+                            *arg_typ = Some(t.clone());
+                            arg_types.push((arg_name.clone(), t.clone()));
+                            env.push(arg_name, Value::Pseudo(t.clone()));
                         }
                         _ => {
-                            *argtyp = Some(t.clone());
-                            env.push(name, Value::Pseudo(t));
+                            return Err(Error::TypeError(
+                                *sloc,
+                                format!(
+                                    "{} expected to be a type in lambda argument list, found {}",
+                                    arg_name.as_ref(),
+                                    t
+                                ),
+                            ))
                         }
                     };
                 }
-
-                let rettyp = body.borrow_mut().typecheck(env, None)?;
+                let ret_type = body.borrow_mut().typecheck(env, None)?;
                 env.pop(args.len());
-                let t = Rc::new(Type::Lambda(
-                    args.iter()
-                        .map(|(name, t, _)| (name.clone(), t.clone().unwrap()))
-                        .collect(),
-                    rettyp,
-                ));
+                let t = Rc::new(Type::Lambda(arg_types, ret_type));
                 *typ = Some(t.clone());
                 Ok(t)
             }
@@ -422,36 +363,147 @@ impl Node {
                 argtypes,
                 rettyp,
             } => {
-                for (name, argtyp, rawargtyp) in argtypes.iter_mut() {
-                    let t = rawargtyp.typecheck_type(env, None, *sloc, "forall (argument)")?;
-                    if t.as_ref() == &Type::Type(None, None) {
-                        let tp = TypeParam {
-                            name: name.clone(),
-                            id: sloc.hash(),
-                        };
-                        let gent = Rc::new(Type::Generic(tp.clone()));
-                        *argtyp = Some(Rc::new(Type::Type(Some(tp), None)));
-                        env.push(name, Value::Pseudo(gent));
-                        continue;
-                    }
-                    *argtyp = Some(t.clone());
-                    env.push(name, Value::Pseudo(t));
+                let mut arg_types = Vec::with_capacity(argtypes.len());
+                for (arg_name, arg_typ, arg_typ_ast) in argtypes.iter_mut() {
+                    let t = arg_typ_ast.typecheck(env, None)?;
+                    match t.as_ref() {
+                        Type::TypeOfType => {
+                            *arg_typ = Some(t.clone());
+                            arg_types.push((arg_name.clone(), t.clone()));
+                            let ph = Rc::new(Type::Placeholder(arg_name.clone()));
+                            env.push(arg_name, Value::Type(ph));
+                        }
+                        Type::TypeOf(t) => {
+                            *arg_typ = Some(t.clone());
+                            arg_types.push((arg_name.clone(), t.clone()));
+                            env.push(arg_name, Value::Pseudo(t.clone()));
+                        }
+                        _ => {
+                            return Err(Error::TypeError(
+                                *sloc,
+                                format!(
+                                    "{} expected to be a type in forall argument list, found {}",
+                                    arg_name.as_ref(),
+                                    t
+                                ),
+                            ))
+                        }
+                    };
                 }
-                let rettyp =
-                    rettyp
-                        .borrow_mut()
-                        .typecheck_type(env, None, *sloc, "forall (return type)")?;
+                let ret_type = rettyp.borrow_mut().typecheck(env, None)?;
+                let ret_type = match ret_type.as_ref() {
+                    Type::TypeOf(t) => t.clone(),
+                    other => {
+                        return Err(Error::TypeError(
+                            *sloc,
+                            format!("expected a type, found: {}", other),
+                        ))
+                    }
+                };
                 env.pop(argtypes.len());
-                let t = Rc::new(Type::Lambda(
-                    argtypes
-                        .iter()
-                        .map(|(name, t, _)| (name.clone(), t.clone().unwrap()))
-                        .collect(),
-                    rettyp,
-                ));
-                let t = Rc::new(Type::Type(None, Some(t)));
+                let t = Rc::new(Type::TypeOf(Rc::new(Type::Lambda(arg_types, ret_type))));
                 *typ = Some(t.clone());
                 Ok(t)
+            }
+            Node::Call { typ: Some(t), .. } => Ok(t.clone()),
+            Node::Call {
+                sloc,
+                typ,
+                callable,
+                args,
+            } => {
+                let callable_typ = callable.typecheck(env, None)?;
+                let Type::Lambda(arg_types, ret_type) = callable_typ.as_ref() else {
+                    return Err(Error::Uncallable(*sloc, format!("not callable: {}", callable)));
+                };
+
+                if args.len() != arg_types.len() {
+                    return Err(Error::Uncallable(
+                        *sloc,
+                        format!("not callable with {} arguments: {}", args.len(), callable),
+                    ));
+                }
+
+                let mut ret_type = ret_type.clone();
+                for (arg, (arg_name, arg_type)) in args.iter_mut().zip(arg_types) {
+                    let typ = arg.typecheck(env, None)?;
+                    if **arg_type == Type::TypeOfType {
+                        if **arg_type == Type::TypeOfType {
+                            ret_type = ret_type.subst(
+                                arg_name.as_ref(),
+                                match typ.as_ref() {
+                                    Type::TypeOf(t) => t,
+                                    _ => panic!(),
+                                },
+                            );
+                            continue;
+                        }
+                    }
+                    if **arg_type != *typ {
+                        return Err(Error::Uncallable(
+                            *sloc,
+                            format!(
+                                "argument {} has type {}, expected: {}",
+                                arg_name.as_ref(),
+                                typ.as_ref(),
+                                arg_type.as_ref()
+                            ),
+                        ));
+                    }
+                }
+
+                *typ = Some(ret_type.clone());
+                Ok(ret_type)
+            }
+            Node::LetIn { typ: Some(t), .. } => Ok(t.clone()),
+            Node::LetIn {
+                sloc: _,
+                typ,
+                name,
+                value,
+                typeannot: None,
+                body,
+            } => {
+                let valuety = value.typecheck(env, None)?;
+                env.push(name, Value::Pseudo(valuety));
+                let bodyty = body.typecheck(env, None)?;
+                env.pop(1);
+                *typ = Some(bodyty.clone());
+                Ok(bodyty)
+            }
+            Node::LetIn {
+                sloc,
+                typ,
+                name,
+                value,
+                typeannot: Some(rawtypeannot),
+                body,
+            } => {
+                let annot = rawtypeannot.typecheck(env, None)?;
+                let annot = match annot.as_ref() {
+                    Type::TypeOf(t) => t,
+                    other => {
+                        return Err(Error::TypeError(
+                            *sloc,
+                            format!(
+                                "expected a type in let-in annotation, not something of type {}",
+                                other
+                            ),
+                        ))
+                    }
+                };
+                env.push(name, Value::Pseudo(annot.clone()));
+                let valuety = value.typecheck(env, Some(annot.clone()))?;
+                if **annot != *valuety {
+                    return Err(Error::TypeError(
+                        *sloc,
+                        format!("type missmatch: {} vs {}", valuety.as_ref(), annot.as_ref()),
+                    ));
+                }
+                let bodyty = body.typecheck(env, None)?;
+                env.pop(1);
+                *typ = Some(bodyty.clone());
+                Ok(bodyty)
             }
             Node::Record { typ: Some(t), .. } => Ok(t.clone()),
             Node::Record { typ, fields, .. } => {
@@ -467,15 +519,26 @@ impl Node {
             Node::RecordType {
                 sloc, typ, fields, ..
             } => {
+                // TODO: field type must be type!
                 let fields: Result<Vec<_>, _> = fields
                     .iter_mut()
                     .map(|(name, rawtyp)| {
                         rawtyp
-                            .typecheck_type(env, None, *sloc, "record type literal")
+                            .typecheck(env, None)
+                            .and_then(|t| match t.as_ref() {
+                                Type::TypeOf(t) => Ok(t.clone()),
+                                other => Err(Error::TypeError(
+                                    *sloc,
+                                    format!(
+                                        "expected a type in record type, not something of type {}",
+                                        other
+                                    ),
+                                )),
+                            })
                             .map(|t| (name.clone(), t))
                     })
                     .collect();
-                let t = Rc::new(Type::Type(None, Some(Rc::new(Type::Record(fields?)))));
+                let t = Rc::new(Type::TypeOf(Rc::new(Type::Record(fields?))));
                 *typ = Some(t.clone());
                 Ok(t)
             }
@@ -501,30 +564,6 @@ impl Node {
                 },
                 _ => Err(Error::TypeError(*sloc, format!("not a record: {}", op0))),
             },
-        }
-    }
-
-    pub fn typecheck_type(
-        &mut self,
-        env: &mut Env,
-        hint: Option<Rc<Type>>,
-        sloc: SLoc,
-        explain: &'static str,
-    ) -> Result<Rc<Type>, Error> {
-        let t = self.typecheck(env, hint)?;
-        match t.as_ref() {
-            Type::Type(None, Some(t)) => Ok(t.clone()),
-            Type::Type(_, None) => Ok(t.clone()),
-            Type::Generic(_) => Ok(t),
-            _ => Err(Error::TypeError(
-                sloc,
-                format!(
-                    "{}: expected a type, not {} of type {}",
-                    explain,
-                    self,
-                    t.as_ref()
-                ),
-            )),
         }
     }
 }
@@ -568,7 +607,7 @@ impl std::fmt::Display for Node {
                 rhs.as_ref()
             ),
             Node::Call { callable, args, .. } => {
-                write!(f, "{}(", callable.as_ref())?;
+                write!(f, "({})(", callable.as_ref())?;
                 for (i, arg) in args.iter().enumerate() {
                     if i != 0 {
                         write!(f, ", ")?;
@@ -605,7 +644,7 @@ impl std::fmt::Display for Node {
                         write!(f, "{}: {}", name.as_ref(), rawtyp.as_ref())?;
                     }
                 }
-                write!(f, ") -> {}", body.borrow())
+                write!(f, ") -> ({})", body.borrow())
             }
             Node::Forall {
                 argtypes, rettyp, ..
@@ -621,7 +660,7 @@ impl std::fmt::Display for Node {
                         write!(f, "{}: {}", name.as_ref(), rawtyp.as_ref())?;
                     }
                 }
-                write!(f, ") -> {}", rettyp.borrow())
+                write!(f, ") -> ({})", rettyp.borrow())
             }
             Node::Record { fields, .. } if fields.is_empty() => write!(f, "{{=}}"),
             Node::Record { fields, .. } => {
