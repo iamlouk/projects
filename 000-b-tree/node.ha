@@ -1,5 +1,6 @@
 use bytes;
 use fmt;
+use io;
 use strings;
 
 // TODO: Add more 'const'!
@@ -14,6 +15,27 @@ export type node = struct {
 	num_keys: size,
 	// TODO: Add offsets here?
 	raw: *[PAGE_SIZE]u8
+};
+
+export fn dump_node(f: io::handle, n: node, ident: str = "") void = {
+	fmt::fprintfln(f, "{}{}-Node#{}: #keys={}, size={}", ident,
+		if (n.typ == node_type::INNER) "Inner" else "Leaf",
+		n.page_offset / PAGE_SIZE, n.num_keys,
+		size_in_bytes(n))!;
+	if (n.typ == node_type::INNER) {
+		for (let i: size = 0; i < n.num_keys; i += 1) {
+			fmt::fprintfln(f, "{} - key='{}' -> off={}", ident,
+				strings::fromutf8(get_key(n, i))!, get_off(n, i))!;
+		};
+		fmt::fprintfln(f, "{} - off={}", ident, get_off(n, n.num_keys))!;
+	} else {
+		for (let i: size = 0; i < n.num_keys; i += 1) {
+			fmt::fprintfln(f, "{} - key='{}' -> val='{}'", ident,
+				strings::fromutf8(get_key(n, i))!,
+				strings::fromutf8(get_val(n, i))!)!;
+		};
+	};
+	fmt::fprintln(f, "")!;
 };
 
 fn empty_node(typ: node_type, page_offset: size, raw: *[PAGE_SIZE]u8) node = {
@@ -77,7 +99,7 @@ fn get_key(n: node, i: size) []u8 = {
 	};
 };
 
-fn get_poses(n: node, dst: []u32) []u32 = {
+fn get_offs(n: node, dst: []u32) []u32 = {
 	assert(n.typ == node_type::INNER);
 	let dst = dst[0..0];
 	let s = 4 + 2*(n.num_keys + 1);
@@ -92,7 +114,7 @@ fn get_poses(n: node, dst: []u32) []u32 = {
 	return dst;
 };
 
-fn get_pos(n: node, i: size) u32 = {
+fn get_off(n: node, i: size) u32 = {
 	assert(n.typ == node_type::INNER && i <= n.num_keys);
 	let s = 4 + 2*(n.num_keys + 1) + (i * 4);
 	let off = ((n.raw[s+0]: u32) << 24)
@@ -100,6 +122,16 @@ fn get_pos(n: node, i: size) u32 = {
 		| ((n.raw[s+2]: u32) << 8)
 		| ((n.raw[s+3]: u32) << 0);
 	return off;
+};
+
+// TODO: This needs to be atomically and fsynced?
+fn set_off(n: node, i: size, off: u32) void = {
+	assert(n.typ == node_type::INNER && i <= n.num_keys);
+	let s = 4 + 2*(n.num_keys + 1) + (i * 4);
+	n.raw[s+0] = (off >> 24): u8;
+	n.raw[s+1] = (off >> 16): u8;
+	n.raw[s+2] = (off >> 8): u8;
+	n.raw[s+3] = (off >> 0): u8;
 };
 
 fn get_vals(n: node, dst: [][]u8) [][]u8 = {
@@ -245,7 +277,7 @@ fn split_inner_node(orig: node, insert_key: []u8, insert_pos: u32,
 	assert(orig.num_keys > 1);
 	let keys: [][]u8 = get_keys(orig, []);
 	defer free(keys);
-	let poses: []u32 = get_poses(orig, []);
+	let poses: []u32 = get_offs(orig, []);
 	defer free(poses);
 
 	let (key_exists, insert_idx) = lookup_in_node(orig, insert_key);
@@ -302,12 +334,12 @@ fn split_inner_node(orig: node, insert_key: []u8, insert_pos: u32,
 		assert(strings::fromutf8(keys[i])! == strings::fromutf8(get_key(n, i))!);
 	};
 
-	let test_positions = get_poses(n, []);
+	let test_positions = get_offs(n, []);
 	defer free(test_positions);
 	assert(len(test_positions) == len(positions));
 	for (let i: size = 0; i < len(positions); i += 1) {
 		assert(positions[i] == test_positions[i]);
-		assert(positions[i] == get_pos(n, i));
+		assert(positions[i] == get_off(n, i));
 	};
 
 	assert(lookup_in_node(n, strings::toutf8("aaa")).1 == 0);
@@ -447,12 +479,12 @@ fn split_inner_node(orig: node, insert_key: []u8, insert_pos: u32,
 	assert(compare_bytes(get_key(a, 1), strings::toutf8("bbb")) == 0);
 	assert(compare_bytes(get_key(a, 2), strings::toutf8("ccc")) == 0);
 	assert(compare_bytes(get_key(b, 0), strings::toutf8("eee")) == 0);
-	assert(get_pos(a, 0) == 1);
-	assert(get_pos(a, 1) == 2);
-	assert(get_pos(a, 2) == 3);
-	assert(get_pos(a, 3) == 10);
-	assert(get_pos(b, 0) == 4);
-	assert(get_pos(b, 1) == 5);
+	assert(get_off(a, 0) == 1);
+	assert(get_off(a, 1) == 2);
+	assert(get_off(a, 2) == 3);
+	assert(get_off(a, 3) == 10);
+	assert(get_off(b, 0) == 4);
+	assert(get_off(b, 1) == 5);
 };
 
 fn compare_bytes(a: []u8, b: []u8) int = {
