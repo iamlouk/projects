@@ -189,3 +189,9 @@ Tags: __*Rust*__, __*ExprTmpl*__
 
 A proof-of-concept for expression templates in Rust.
 
+### 032: [Base64](./032-base64)
+
+Tags: __*Base64*__, __*Encoding*__
+
+A mini-benchmark of base64 encoding in different languages.
+
