@@ -31,7 +31,7 @@ impl Env {
             int_type: Rc::new(Type::Integer),
             bool_type: Rc::new(Type::Boolean),
             str_type: Rc::new(Type::String),
-            type_type: Rc::new(Type::Type(None)),
+            type_type: Rc::new(Type::Type(None, None)),
         };
         env.globals.insert("Int", Value::Type(env.int_type.clone()));
         env.globals
@@ -98,7 +98,8 @@ impl Env {
                 args,
                 ..
             } => match self.eval(callable)? {
-                Value::Lambda(argnames, body) if argnames.len() == args.len() => {
+                Value::Lambda(argnames, body) => {
+                    assert!(argnames.len() == args.len());
                     for (i, (name, _)) in argnames.iter().enumerate() {
                         let arg = self.eval(&args[i])?;
                         self.push(name, arg);
@@ -107,6 +108,11 @@ impl Env {
                     let value = self.eval(&body.borrow())?;
                     self.pop(args.len());
                     Ok(value)
+                }
+                Value::Builtin(b) => {
+                    assert!(b.argtypes.len() == args.len());
+                    let args: Result<Vec<_>, _> = args.iter().map(|arg| self.eval(arg)).collect();
+                    (b.f)(args?)
                 }
                 _ => Err(Error::Uncallable(*sloc, format!("{}", callable.as_ref()))),
             },
