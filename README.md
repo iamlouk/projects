@@ -87,4 +87,12 @@ Tags: __*Rust*__, __*Macros*__
 A procedural Rust macro that can be `#[derive()]`d on any enum and adds a `fn match_variants(self: &Self, other: &Self) -> bool` function. This function
 returns true if the enums are of the same variant, but they can hold different values in their fields.
 
+### 015: [Shitty SVE Instruction Emulator](./015-shitty-sve-ie)
+
+Tags: __*SVE*__, __*C*__, __*AArch64*__
+
+SVE (Arm's Scalable Vector Extensions) is cool, but not hardware supporting it is hard to get a.t.m.. This project is a proof of concept for a
+`LD_PRELOAD` and `SIGILL`-handler based instruction emulator for AArch64 hardware without SVE for SVE instructions. It only supports 5 instructions in order
+to run a super simple vectorized vector-add operation. The VL/VScale can be changed. It is super slow (especially for me as I do not have AArch64 hardware
+and had to test inside of a `qemu-system-aarch64` VM (Btw: I learned that user-space `qemu-aarch` does not correctly emulate the `mcontext_t` struct).
 

@@ -1,10 +1,12 @@
 
 a.out
 *.o
+*.so
 test
 
 /*/target
 /*/build
 
 /007-mini-vm/minivm
+/015-shitty-sve-ie/example/add_vecs
 
