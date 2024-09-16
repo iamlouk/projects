@@ -72,7 +72,7 @@ A simple Jump&Run in plain vanilla JS using HTML5 canvas. Images from [this asse
 
 Tags: __*C++*__, __*LLVM*__
 
-This is probably one of the best ones yet. It is a auto-vectorizer for LLVM and has it's own [README](./012-very-bad-vectorizer/README.md).
+The worst but maybe simplest vectorizer you have ever seen. It is a auto-vectorizer for LLVM and has it's own [README](./012-very-bad-vectorizer/README.md).
 
 ### 013: [Rust Macro for Matching Enum Variants](./013-enum-match)
 
@@ -84,7 +84,9 @@ A procedural Rust macro that can be `#[derive()]`d on any enum and adds a `fn ma
 
 Tags: __*SVE*__, __*C*__, __*AArch64*__
 
-SVE (Arm's Scalable Vector Extensions) is cool, but not hardware supporting it is hard to get a.t.m.. This project is a proof of concept for a `LD_PRELOAD` and `SIGILL`-handler based instruction emulator for AArch64 hardware without SVE for SVE instructions. It only supports 5 instructions in order to run a super simple vectorized vector-add operation. The VL/VScale can be changed. It is super slow (especially for me as I do not have AArch64 hardware and had to test inside of a `qemu-system-aarch64` VM (Btw: I learned that user-space `qemu-aarch` does not correctly emulate the `mcontext_t` struct).
+SVE (Arm's Scalable Vector Extensions) is cool, but hardware supporting it is hard to get a.t.m.. This project is a proof of concept for a `LD_PRELOAD` and `SIGILL`-handler based instruction emulator for AArch64 hardware without SVE for SVE instructions. It only supports 5 instructions in order to run a super simple vectorized vector-add operation. The VL/VScale can be changed. It is super slow (especially for me as I do not have AArch64 hardware and had to test inside of a `qemu-system-aarch64` VM (Btw: I learned that user-space `qemu-aarch` does not correctly emulate the `mcontext_t` struct).
+
+The directory also contains me experimenting with how the ARM Scalable Matrix Extensions could be used in the future. Once a stable version of gcc or clang support ARM SME, I would like to come back to this project and add support for SME in the library.
 
 ### 016: [Adaptive Radix Tree](./016-art)
 
