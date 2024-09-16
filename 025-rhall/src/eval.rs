@@ -8,17 +8,19 @@ use crate::{
     core::{Builtin, Error, SLoc, Type, TypeParam, Value},
 };
 
+#[derive(Debug)]
 pub struct Env {
     // TODO: Add the string_pool hashset here or to a runtime object.
     // TODO: Add pre-allocated type RCs here that can be used by the parser!
     globals: std::collections::HashMap<&'static str, Value>,
-    locals: Vec<(Rc<str>, Value)>,
+    pub locals: Vec<(Rc<str>, Value)>,
     pub string_pool: std::collections::HashSet<Rc<str>>,
 
     pub int_type: Rc<Type>,
     pub bool_type: Rc<Type>,
     pub str_type: Rc<Type>,
     pub type_type: Rc<Type>,
+    pub any_type: Rc<Type>,
 }
 
 impl Env {
@@ -32,6 +34,7 @@ impl Env {
             bool_type: Rc::new(Type::Boolean),
             str_type: Rc::new(Type::String),
             type_type: Rc::new(Type::Type(None, None)),
+            any_type: Rc::new(Type::Any),
         };
         env.globals.insert("Int", Value::Type(env.int_type.clone()));
         env.globals
@@ -39,6 +42,7 @@ impl Env {
         env.globals.insert("Str", Value::Type(env.str_type.clone()));
         env.globals
             .insert("Type", Value::Type(env.type_type.clone()));
+        env.globals.insert("Any", Value::Type(env.any_type.clone()));
         env
     }
 
@@ -48,6 +52,16 @@ impl Env {
             return Some(val.clone());
         }
         self.globals.get(name).cloned()
+    }
+
+    pub fn stringify(&mut self, string: &str) -> Rc<str> {
+        if let Some(s) = self.string_pool.get(string) {
+            return s.clone();
+        }
+
+        let s: Rc<str> = Rc::from(string);
+        self.string_pool.insert(s.clone());
+        s
     }
 
     #[allow(unused)]
@@ -153,6 +167,27 @@ impl Env {
                 self.pop(argtypes.len());
                 Ok(res)
             }
+            Node::Record { fields, .. } => {
+                let fields: Result<Vec<_>, _> = fields
+                    .iter()
+                    .map(|(name, value)| self.eval(value).map(|v| (name.clone(), v)))
+                    .collect();
+                Ok(Value::Record(fields?))
+            }
+            Node::RecordType { typ, .. } => {
+                // TODO: Now that type checks are always enabled and work well, something
+                // like this should also work elsewhere:
+                Ok(Value::Type(typ.clone().unwrap()))
+            }
+            Node::AccessField { op0, field, .. } => match self.eval(op0)? {
+                Value::Record(fields) => Ok(fields
+                    .iter()
+                    .find(|(name, _)| name.as_ref() == field.as_ref())
+                    .unwrap()
+                    .1
+                    .clone()),
+                _ => panic!(),
+            },
         }
     }
 }
@@ -175,6 +210,27 @@ pub fn add_builtins(env: &mut Env) {
                     _ => panic!(),
                 };
                 std::process::exit(code as i32)
+            }),
+        })),
+    );
+
+    env.add_global(
+        "Process/getenv",
+        Value::Builtin(Rc::new(Builtin {
+            name: "Process/getenv",
+            argtypes: vec![(x_str.clone(), env.str_type.clone())],
+            rettyp: Rc::new(Type::Option(env.str_type.clone())),
+            f: Box::new(|env, args| {
+                let x = match &args[0] {
+                    Value::Str(x) => x,
+                    _ => panic!(),
+                };
+                Ok(Value::Option(
+                    env.str_type.clone(),
+                    std::env::var(x.as_ref())
+                        .ok()
+                        .map(|x| Box::new(Value::Str(env.stringify(x.as_ref())))),
+                ))
             }),
         })),
     );

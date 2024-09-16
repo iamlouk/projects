@@ -146,5 +146,5 @@ Command line tetris.
 
 Tags: __*Rust*__, __*Interpreter*__
 
-A tiny super bad interpreter for a [Dhall](https://github.com/dhall-lang/dhall-lang)-like language subset. The prototype works but is very very basic. I might come back to it to improve it by adding the following things: record types, builtins, type-checking, lists, higher-order types, ...
+A tiny super bad interpreter for a [Dhall](https://github.com/dhall-lang/dhall-lang)-like language subset, but with recursion! The prototype works, but is missing a lot of futures. I might come back to it to improve it and fix a known bug in the type checker. All [examples](./025-rhall/examples) work.
 
