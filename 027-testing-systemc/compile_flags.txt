@@ -1,0 +1,5 @@
+-std=c++17
+-Wall
+-Wextra
+-I.
+-I./systemc-install/include
