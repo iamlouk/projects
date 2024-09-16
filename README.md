@@ -183,3 +183,9 @@ Tags: __*MNIST*__, __*DL*__
 
 A neural network from scratch in Rust. This might get abandoned pretty soon, it is very far from being done.
 
+### 031: [Expression Templates In Rust](./031-rust-exprtmpl)
+
+Tags: __*Rust*__, __*ExprTmpl*__
+
+A proof-of-concept for expression templates in Rust.
+
