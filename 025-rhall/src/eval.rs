@@ -188,12 +188,25 @@ impl Env {
                     .clone()),
                 _ => panic!(),
             },
+            Node::As { op0, as_typ, .. } => {
+                match (self.eval(op0)?, as_typ.as_ref().unwrap().as_ref()) {
+                    (v, Type::Any) => Ok(Value::Any(op0.get_type().unwrap(), Box::new(v))),
+                    (Value::Any(truetype, v), t) if *truetype == *t => {
+                        Ok(Value::Option(as_typ.clone().unwrap(), Some(v)))
+                    }
+                    (Value::Any(truetype, _), t) if *truetype != *t => {
+                        Ok(Value::Option(as_typ.clone().unwrap(), None))
+                    }
+                    (a, b) => todo!("{} as {}", a, b),
+                }
+            }
         }
     }
 }
 
 pub fn add_builtins(env: &mut Env) {
     let x_str: Rc<str> = Rc::from("x");
+    let a_str: Rc<str> = Rc::from("A");
 
     env.add_global(
         "Process/exit",
@@ -232,7 +245,98 @@ pub fn add_builtins(env: &mut Env) {
         })),
     );
 
+    // Option: ∀(A: Type) -> Option(A)
+    let ph = Rc::new(Type::Placeholder(a_str.clone()));
+    env.add_global(
+        "Option",
+        Value::Builtin(Rc::new(Builtin {
+            name: "Option",
+            argtypes: vec![(a_str.clone(), env.type_type.clone())],
+            rettyp: Rc::new(Type::TypeOf(Rc::new(Type::Option(ph)))),
+            f: Box::new(|_, args| {
+                let a = args[0].expect_type();
+                Ok(Value::Type(Rc::new(Type::Option(a))))
+            }),
+        })),
+    );
+
+    // None: ∀(A: Type) -> Option(A)
+    let ph = Rc::new(Type::Placeholder(a_str.clone()));
+    env.add_global(
+        "None",
+        Value::Builtin(Rc::new(Builtin {
+            name: "None",
+            argtypes: vec![(a_str.clone(), env.type_type.clone())],
+            rettyp: Rc::new(Type::Option(ph)),
+            f: Box::new(|_, args| {
+                let a = args[0].expect_type();
+                Ok(Value::Option(a, None))
+            }),
+        })),
+    );
+
+    // Some: ∀(A: Type) -> ∀(x: A) -> Option(A)
+    let ph = Rc::new(Type::Placeholder(a_str.clone()));
+    env.add_global(
+        "Some",
+        Value::Builtin(Rc::new(Builtin {
+            name: "Some",
+            argtypes: vec![(a_str.clone(), env.type_type.clone())],
+            rettyp: Rc::new(Type::Lambda(
+                vec![(x_str.clone(), ph.clone())],
+                Rc::new(Type::Option(ph)),
+            )),
+            f: Box::new(|_, args| {
+                let a = args[0].expect_type();
+                Ok(Value::Builtin(Rc::new(Builtin {
+                    name: "None(A)",
+                    argtypes: vec![(Rc::from("x"), a.clone())],
+                    rettyp: Rc::new(Type::Option(a.clone())),
+                    f: Box::new(move |_, args| {
+                        Ok(Value::Option(a.clone(), Some(Box::new(args[0].clone()))))
+                    }),
+                })))
+            }),
+        })),
+    );
+
+    // Option/or: ∀(A: Type) -> ∀(x1: Option(A), x2: A) -> A
+    let ph = Rc::new(Type::Placeholder(a_str.clone()));
+    env.add_global(
+        "Option/or",
+        Value::Builtin(Rc::new(Builtin {
+            name: "Option/or",
+            argtypes: vec![(a_str.clone(), env.type_type.clone())],
+            rettyp: Rc::new(Type::Lambda(
+                vec![
+                    (x_str.clone(), Rc::new(Type::Option(ph.clone()))),
+                    (x_str.clone(), ph.clone()),
+                ],
+                ph,
+            )),
+            f: Box::new(|_, args| {
+                let a = args[0].expect_type();
+                Ok(Value::Builtin(Rc::new(Builtin {
+                    name: "Option/or(A)",
+                    argtypes: vec![
+                        (Rc::from("x"), Rc::new(Type::Option(a.clone()))),
+                        (Rc::from("x"), a.clone()),
+                    ],
+                    rettyp: a,
+                    f: Box::new(|_, args| {
+                        Ok(match (&args[0], &args[1]) {
+                            (Value::Option(_, Some(v)), _) => *v.clone(),
+                            (Value::Option(_, None), v) => v.clone(),
+                            _ => panic!(),
+                        })
+                    }),
+                })))
+            }),
+        })),
+    );
+
     drop(x_str);
+    drop(a_str);
 }
 
 #[cfg(test)]

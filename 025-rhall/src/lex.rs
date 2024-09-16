@@ -26,6 +26,7 @@ pub enum Tok {
     Lambda,
     Forall,
     Typeof,
+    As,
 
     LParen,
     RParen,
@@ -370,6 +371,7 @@ impl<'a> std::iter::Iterator for Lexer<'a> {
                     "then" => Ok((self.sloc, Tok::Then)),
                     "else" => Ok((self.sloc, Tok::Else)),
                     "typeof" => Ok((self.sloc, Tok::Typeof)),
+                    "as" => Ok((self.sloc, Tok::As)),
                     _ => Ok((self.sloc, Tok::Id(self.get_buffer_as_string()))),
                 }
             }

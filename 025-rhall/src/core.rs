@@ -167,7 +167,7 @@ impl Type {
             Type::Record(fields) => Rc::new(Type::Record(
                 fields
                     .iter()
-                    .map(|(name, t)| (name.clone(), t.subst(name, subst)))
+                    .map(|(field_name, t)| (field_name.clone(), t.subst(name, subst)))
                     .collect(),
             )),
         }
@@ -193,6 +193,7 @@ pub enum Value {
     Builtin(Rc<Builtin>),
     Option(Rc<Type>, Option<Box<Value>>),
     Record(Vec<(Rc<str>, Value)>),
+    Any(Rc<Type>, Box<Value>),
 }
 
 pub struct Builtin {
@@ -231,13 +232,14 @@ impl Value {
                 body.borrow().get_type().unwrap(),
             )),
             Value::Builtin(b) => Rc::new(Type::Lambda(b.argtypes.clone(), b.rettyp.clone())),
-            Value::Option(t, _) => t.clone(),
+            Value::Option(t, _) => Rc::new(Type::Option(t.clone())),
             Value::Record(fields) => Rc::new(Type::Record(
                 fields
                     .iter()
                     .map(|(name, val)| (name.clone(), val.get_type(env)))
                     .collect(),
             )),
+            Value::Any(_, _) => env.any_type.clone(),
         }
     }
 
@@ -255,6 +257,13 @@ impl Value {
             }
             Value::Builtin(b) => (b.f)(env, args),
             _ => Err(Error::Uncallable(sloc, format!("{}", self))),
+        }
+    }
+
+    pub fn expect_type(&self) -> Rc<Type> {
+        match self {
+            Value::Type(t) => t.clone(),
+            v => panic!("expected type, found: {}", v),
         }
     }
 }
@@ -289,6 +298,9 @@ impl Display for Value {
                     write!(f, ", {} = {}", name.as_ref(), val)?;
                 }
                 write!(f, " }}")
+            }
+            Value::Any(truetype, boxedvalue) => {
+                write!(f, "(({} : {}) as Any)", boxedvalue, truetype)
             }
         }
     }
