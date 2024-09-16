@@ -7,6 +7,9 @@ HAREFLAGS =
 
 all: ws echo
 
+ws: ws.ha
+	$(HARE) build $(HAREFLAGS) -o $@ $^
+
 echo: echo.ha
 	$(HARE) build $(HAREFLAGS) -o $@ $^
 

@@ -3,6 +3,7 @@ a.out
 *.so
 *.bin
 *.pyc
+*.class
 test
 went-nowhere
 .cache

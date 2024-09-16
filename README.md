@@ -3,6 +3,8 @@
 Future Ideas:
 
 - A REDIS clone (using epoll etc), maybe in Rust?
+- A [QBE](https://c9x.me/compile/) to/from LLVM-IR or to/from GCC GIMPLE translation?
+- A small simple compiler backend: ISel, Register Allocation, ...
 
 Projects to small for their own repository or just small little things I want to try out.
 
@@ -191,13 +193,19 @@ A proof-of-concept for expression templates in Rust.
 
 ### 032: [Base64](./032-base64)
 
-Tags: __*Base64*__, __*Encoding*__
+Tags: __*Base64*__, __*Encoding*__, __*Java*__, __*Hare*__, __*C*__, __*Go*__
 
-A mini-benchmark of base64 encoding in different languages.
+A mini-benchmark of base64 encoding (and decoding in C) in different languages. Are there more optimizations possible? Maybe I will come back to this one. To my surprise, "chunking" does not help with performance. More possible future features: Allow whitespace when decoding, add newlines in the output when encoding. The [Hare](https://harelang.org/) implementation is a bit disappointingly slow, clearly QBE is not even close to 75% of GCC/LLVM as it claims, and I don't think this need some super-fancy compiler opt..
 
 ### 033: [BARE](./033-bare/)
 
 Tags: __*Go*__, __*Encoding*__
 
 Some fun (nothing useful) with implementing parts of the [BARE](https://datatracker.ietf.org/doc/draft-devault-bare/) message format and its schema language.
+
+### 034: [A WebSocket Server Protocol Impl.](./034-websocket)
+
+Tags: __*Hare*__, __*Go*__, __*WebSocket*__
+
+This is a from-scratch implementation of the [WebSocket protocol (RFC6455)](https://datatracker.ietf.org/doc/html/rfc6455), only using the stdlib. It is only a simple subset of the server side of the protocol. For anything serious, there is [golang.org/x/net/websocket](https://pkg.go.dev/golang.org/x/net/websocket), which I used to test my server against. The directory also contains a simple TCP echo server in Hare, because I would like to do a bit more stuff in Hare, and a websocket server might be a good usecase.
 
