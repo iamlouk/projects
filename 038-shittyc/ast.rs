@@ -48,7 +48,7 @@ pub enum Stmt {
     Decls    { sloc: SLoc, ident: u8, decls: Vec<Rc<Decl>> },
     Compound { sloc: SLoc, ident: u8, stmts: Vec<Stmt> },
     While    { sloc: SLoc, ident: u8, cond: Box<Expr>, body: Box<Stmt> },
-    For      { sloc: SLoc, ident: u8, init: Box<Stmt>, cond: Box<Expr>, incr: Box<Stmt>, body: Box<Stmt> },
+    For      { sloc: SLoc, ident: u8, init: Box<Stmt>, cond: Box<Expr>, incr: Box<Expr>, body: Box<Stmt> },
     If       { sloc: SLoc, ident: u8, cond: Box<Expr>, then: Box<Stmt>, otherwise: Option<Box<Stmt>> },
     Ret      { sloc: SLoc, ident: u8, val: Option<Box<Expr>> },
 }
@@ -350,8 +350,8 @@ impl Parser {
                 return Err(Error::Type(sloc, cond.get_typ(), "expected boolean condition for while"))
             }
             lex.expect_token(Tok::SemiColon, "expected for loop condition")?;
-            let incr = self.parse_stmt(lex, 0)?;
-            lex.expect_token(Tok::LParen, "expected ')' after for")?;
+            let incr = self.parse_expr(lex)?;
+            lex.expect_token(Tok::RParen, "expected ')' after for")?;
             let body = self.parse_stmt(lex, ident + 1)?;
             return Ok(Box::new(Stmt::For { sloc, ident, init, cond, incr, body }))
         }

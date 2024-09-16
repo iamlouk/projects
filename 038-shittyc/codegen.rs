@@ -85,8 +85,8 @@ impl<'a> CodeGen<'a> {
     pub fn write(&mut self, fun: &Function) -> Result<(), std::io::Error> {
         // TODO: Handle spilling or put locals with non-overlapping lifetimes in same reg.
         // TODO: Use caller save regs and so on?
-        assert!(fun.args.len() < Reg::argument_regs().len());
-        assert!(fun.locals.len() < Reg::caller_save().len());
+        assert!(fun.args.len() <= Reg::argument_regs().len());
+        assert!(fun.locals.len() <= Reg::caller_save().len());
 
         self.regs.clear();
         self.label_cntr = 0;
@@ -160,6 +160,13 @@ impl<'a> CodeGen<'a> {
                     _ => unimplemented!()
                 }
             },
+            Expr::Assign { op: None, lhs, rhs, .. } => match lhs.as_ref() {
+                Expr::Id { decl, .. } => {
+                    let reg = self.regs.get(decl).expect("register slot");
+                    self.expr(rhs.as_ref(), *reg, scratch)
+                },
+                _ => unimplemented!()
+            },
             _ => unimplemented!()
         }
     }
@@ -170,6 +177,15 @@ impl<'a> CodeGen<'a> {
             Stmt::Compound { stmts, .. } => {
                 for stmt in stmts {
                     self.stmt(stmt, scratch)?;
+                }
+                Ok(())
+            },
+            Stmt::Decls { decls, .. } => {
+                for decl in decls {
+                    let reg = self.regs.get(decl).expect("register slot");
+                    if let Some(e) = &decl.init {
+                        self.expr(e.as_ref(), *reg, scratch)?;
+                    }
                 }
                 Ok(())
             },
@@ -186,6 +202,20 @@ impl<'a> CodeGen<'a> {
                 write!(self.out, "\tbeq {}, zero, .BB{}\n", scratch[0], id)?;
                 self.stmt(then.as_ref(), scratch)?;
                 write!(self.out, ".BB{}:\n", id)
+            },
+            Stmt::For { init, cond, incr, body, .. } => {
+                let cond_id = self.label_cntr;
+                self.label_cntr += 1;
+                let loop_id = self.label_cntr;
+                self.label_cntr += 1;
+                self.stmt(init.as_ref(), scratch)?;
+                writeln!(self.out, "\tj .BB{}", cond_id)?;
+                writeln!(self.out, ".BB{}:", loop_id)?;
+                self.stmt(body.as_ref(), scratch)?;
+                self.expr(incr.as_ref(), Reg::Zero, scratch)?;
+                writeln!(self.out, ".BB{}:", cond_id)?;
+                self.expr(cond.as_ref(), scratch[0], scratch)?;
+                writeln!(self.out, "\tbne {}, zero, .BB{}\n", scratch[0], loop_id)
             },
             _ => unimplemented!()
         }
