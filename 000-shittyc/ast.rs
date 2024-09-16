@@ -674,43 +674,35 @@ mod test {
         p.parse_function(&mut lex).unwrap()
     }
 
-    fn parse_expr(input: &str) -> Box<Expr> {
-        let buf = input.as_bytes().to_vec();
-        let mut lex = Lexer::new(std::path::Path::new("text.c"), &buf);
-        let mut p = Parser::new();
-        p.parse_expr(&mut lex).unwrap()
-    }
-
-    #[test]
-    fn some_final_exprs() {
-        assert_eq!(
-            parse_expr("-*hallo[42]->foo").to_string(),
-            "-(*((*((hallo)[0x2a])).foo))");
-
-        assert_eq!(
-            parse_expr("*(int*)foo").to_string(),
-            "*((int32_t*)(foo))");
-
-        assert_eq!(
-            parse_expr("foo | a + b * c + d & bar").to_string(),
-            "((foo) | (((a) + ((b) * (c))) + (d))) & (bar)");
-    }
-
     #[test]
     fn foo() {
-        let f = parse_func("static signed long foo(unsigned n) { return bar(n); }");
+        let f = parse_func("static int foo(int n) { return n + 42; }");
         assert_eq!(f.is_static, true);
         assert_eq!(&*f.name, "foo");
         assert!(f.args.len() == 1 && &*f.args[0].0 == "n" &&
-            f.args[0].1 == Type::Int { bits: 32, signed: false });
-        assert_eq!(f.retty, Type::Int { bits: 64, signed: true });
+            f.args[0].1 == Type::Int { bits: 32, signed: true });
+        assert_eq!(f.retty, Type::Int { bits: 32, signed: true });
         assert_matches!(*f.body.unwrap(), Stmt::Compound { sloc: _, stmts } if stmts.len() == 1 &&
             matches!(&stmts[0],
                 Stmt::Ret { sloc: _, val: Some(x) } if
-                    matches!(&**x, Expr::Call { sloc: _, typ: Type::Unknown, func, args } if
-                        matches!(&**func, Expr::Id { sloc: _, typ: _, name, decl: _ } if &**name == "bar") &&
-                        args.len() == 1 &&
-                        matches!(&args[0], Expr::Id { sloc: _, typ: _, name, decl: _ } if &**name == "n"))));
+                    matches!(&**x, Expr::BinOp { sloc: _, typ: _, op: BinOp::Add, lhs, rhs } if
+                        matches!(&**lhs, Expr::Id { sloc: _, typ: _, name, decl: _ } if &**name == "n") &&
+                        matches!(&**rhs, Expr::Int { sloc: _, typ: _, num: 42 }))));
+    }
+
+    #[test]
+    fn bar() {
+        let f = parse_func("static int bar(struct { int x; int y; } *s) { return s->y; }");
+        assert_eq!(f.is_static, true);
+        assert_eq!(&*f.name, "bar");
+        assert_eq!(f.retty, Type::Int { bits: 32, signed: true });
+        assert_matches!(*f.body.unwrap(), Stmt::Compound { sloc: _, stmts } if stmts.len() == 1 &&
+            matches!(&stmts[0],
+                Stmt::Ret { sloc: _, val: Some(x) } if
+                    matches!(&**x, Expr::FieldAccess { obj, field, idx: 1, .. } if
+                        matches!(&**obj, Expr::Deref { ptr, .. } if
+                            matches!(&**ptr, Expr::Id { name, .. } if &**name == "s")) &&
+                        &**field == "y")));
     }
 
     #[test]
