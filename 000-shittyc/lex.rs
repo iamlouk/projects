@@ -673,7 +673,7 @@ impl<'lexer> Lexer<'lexer> {
         }
     }
 
-    fn peek(&mut self) -> Result<(SLoc, Tok), Error> {
+    pub fn peek(&mut self) -> Result<(SLoc, Tok), Error> {
         if let Some(res) = self.peeked.front() {
             return Ok(res.clone())
         }
@@ -698,6 +698,32 @@ impl<'lexer> Lexer<'lexer> {
             return self.next()
         }
         Ok(tok)
+    }
+
+    pub fn expect_token(&mut self, tok: Tok) -> Result<(), Error> {
+        match self.next()? {
+            (_, t) if t == tok => Ok(()),
+            (sloc, t) => Err(Error::UnexpectedTok(sloc, t, tok, "unexpected token")),
+        }
+    }
+
+    pub fn expect_id(&mut self) -> Result<Rc<str>, Error> {
+        match self.next()? {
+            (_, Tok::Id(s)) => Ok(s),
+            (sloc, t) => Err(Error::UnexpectedTok(sloc, t, Tok::Id(Rc::from("whatever")), "expected identifier")),
+        }
+    }
+
+    pub fn consume_if_next(&mut self, tok: Tok) -> Result<bool, Error> {
+        if self.peek()?.1 == tok {
+            self.next()?;
+            return Ok(true)
+        }
+        Ok(false)
+    }
+
+    pub fn unread(&mut self, sloc: SLoc, tok: Tok) {
+        self.peeked.push_front((sloc, tok));
     }
 }
 
@@ -778,13 +804,15 @@ mod test {
         assert_matches!(toks[2], Tok::Id(ref id) if id.as_ref() == "foo");
     }
 
-    static FIBS_EXAMPLE: &'static str = "export fn fibs(n: unsigned) = if n < 2 { n } else { fibs(n - 2) + fibs(n - 1) };";
+    static FIBS_EXAMPLE: &'static str = "
+        export fn fibs(n: unsigned): unsigned =
+            if n < 2 { n } else { fibs(n - 2) + fibs(n - 1) };";
 
     #[test]
     fn fibs() {
         let toks = lex(FIBS_EXAMPLE);
         println!("tokens: {:?}", toks);
-        assert_eq!(toks.len(), 33);
+        assert_eq!(toks.len(), 35);
         assert_matches!(toks[0], Tok::Export);
         assert_matches!(toks[1], Tok::Fn);
         assert_matches!(toks[2], Tok::Id(ref id) if id.as_ref() == "fibs");
@@ -793,30 +821,32 @@ mod test {
         assert_matches!(toks[5], Tok::Colon);
         assert_matches!(toks[6], Tok::Unsigned);
         assert_matches!(toks[7], Tok::RParen);
-        assert_matches!(toks[8], Tok::Assign);
-        assert_matches!(toks[9], Tok::If);
-        assert_matches!(toks[10], Tok::Id(ref id) if id.as_ref() == "n");
-        assert_matches!(toks[11], Tok::Smaller);
-        assert_matches!(toks[12], Tok::IntLit(2));
-        assert_matches!(toks[13], Tok::LBraces);
-        assert_matches!(toks[14], Tok::Id(ref id) if id.as_ref() == "n");
-        assert_matches!(toks[15], Tok::RBraces);
-        assert_matches!(toks[16], Tok::Else);
-        assert_matches!(toks[17], Tok::LBraces);
-        assert_matches!(toks[18], Tok::Id(ref id) if id.as_ref() == "fibs");
-        assert_matches!(toks[19], Tok::LParen);
-        assert_matches!(toks[20], Tok::Id(ref id) if id.as_ref() == "n");
-        assert_matches!(toks[21], Tok::Minus);
-        assert_matches!(toks[22], Tok::IntLit(2));
-        assert_matches!(toks[23], Tok::RParen);
-        assert_matches!(toks[24], Tok::Plus);
-        assert_matches!(toks[25], Tok::Id(ref id) if id.as_ref() == "fibs");
-        assert_matches!(toks[26], Tok::LParen);
-        assert_matches!(toks[27], Tok::Id(ref id) if id.as_ref() == "n");
-        assert_matches!(toks[28], Tok::Minus);
-        assert_matches!(toks[29], Tok::IntLit(1));
-        assert_matches!(toks[30], Tok::RParen);
-        assert_matches!(toks[31], Tok::RBraces);
-        assert_matches!(toks[32], Tok::SemiColon);
+        assert_matches!(toks[8], Tok::Colon);
+        assert_matches!(toks[9], Tok::Unsigned);
+        assert_matches!(toks[10], Tok::Assign);
+        assert_matches!(toks[11], Tok::If);
+        assert_matches!(toks[12], Tok::Id(ref id) if id.as_ref() == "n");
+        assert_matches!(toks[13], Tok::Smaller);
+        assert_matches!(toks[14], Tok::IntLit(2));
+        assert_matches!(toks[15], Tok::LBraces);
+        assert_matches!(toks[16], Tok::Id(ref id) if id.as_ref() == "n");
+        assert_matches!(toks[17], Tok::RBraces);
+        assert_matches!(toks[18], Tok::Else);
+        assert_matches!(toks[19], Tok::LBraces);
+        assert_matches!(toks[20], Tok::Id(ref id) if id.as_ref() == "fibs");
+        assert_matches!(toks[21], Tok::LParen);
+        assert_matches!(toks[22], Tok::Id(ref id) if id.as_ref() == "n");
+        assert_matches!(toks[23], Tok::Minus);
+        assert_matches!(toks[24], Tok::IntLit(2));
+        assert_matches!(toks[25], Tok::RParen);
+        assert_matches!(toks[26], Tok::Plus);
+        assert_matches!(toks[27], Tok::Id(ref id) if id.as_ref() == "fibs");
+        assert_matches!(toks[28], Tok::LParen);
+        assert_matches!(toks[29], Tok::Id(ref id) if id.as_ref() == "n");
+        assert_matches!(toks[30], Tok::Minus);
+        assert_matches!(toks[31], Tok::IntLit(1));
+        assert_matches!(toks[32], Tok::RParen);
+        assert_matches!(toks[33], Tok::RBraces);
+        assert_matches!(toks[34], Tok::SemiColon);
     }
 }

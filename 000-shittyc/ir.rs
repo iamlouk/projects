@@ -1,3 +1,4 @@
+/*
 use std::{cell::RefCell, fmt::Display, rc::{Rc, Weak}};
 
 use crate::common::Type;
@@ -100,3 +101,4 @@ impl Display for Function {
         Ok(())
     }
 }
+*/
