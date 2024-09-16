@@ -1,4 +1,4 @@
-.PHONY: day01 day02 day03
+.PHONY: day01 day02 day03 day04
 
 # Fortran may not be as bad as I thought and actually
 # pretty useful sometimes, but text processing is not
@@ -17,4 +17,8 @@ day02: ./02/cube-conundrum.hs ./02/input.txt
 day03: ./03/gear-ratios.d ./03/input.txt
 	gdc -Wall -Wextra -O1 ./03/gear-ratios.d -o ./03/solver
 	./03/solver < ./03/input.txt
+
+# Doing this in bash was actually not as hard as I thought...
+day04: ./04/scratchcards.sh ./04/input.txt
+	bash ./04/scratchcards.sh < ./04/input.txt
 
