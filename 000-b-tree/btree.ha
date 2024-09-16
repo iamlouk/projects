@@ -5,12 +5,15 @@ use io;
 use strings;
 use time;
 
+def MAX_KEY_LEN: size = PAGE_SIZE / 8;
+def MAX_VAL_LEN: size = PAGE_SIZE / 4;
+
 export type btree = struct {
 	cache: page_cache,
 	root: node,
 	// TODO: memory-map the file?
 	file: io::file,
-	free_list: []size
+	free_page_list: []size
 };
 
 export type page_cache = struct {
@@ -28,11 +31,17 @@ export fn lookup(bt: *btree, key: []u8) (void | io::error | []u8) = {
 		if (n.typ == node_type::LEAF && res.0 == false)
 			return void;
 		if (n.typ == node_type::LEAF)
-			return res.1 as []u8;
+			return get_val(n, res.1);
 
-		let next_node_pos = res.1 as size;
+		let next_node_pos = get_pos(n, res.1): size * PAGE_SIZE;
 		n = get_page_from_cache_or_disk(bt, next_node_pos)?;
 	};
+};
+
+fn insert_into_leaf(bt: *btree, n: node, key: []u8, val: []u8) (node | (node, node)) = {
+	let (found, idx) = lookup_in_node(n, key);
+
+	fmt::fatal("TODO");
 };
 
 fn get_page_from_cache_or_disk(bt: *btree, page_offset: size) (node | io::error) = {
@@ -42,7 +51,6 @@ fn get_page_from_cache_or_disk(bt: *btree, page_offset: size) (node | io::error)
 	};
 
 	io::seek(bt.file, page_offset: io::off, io::whence::SET)?;
-
 	let buf: *[PAGE_SIZE]u8 = alloc([0...]);
 	match (io::readall(bt.file, buf)) {
 	case let n: size => assert(n == PAGE_SIZE);
@@ -56,6 +64,31 @@ fn get_page_from_cache_or_disk(bt: *btree, page_offset: size) (node | io::error)
 	return n;
 };
 
+// Because there is no memory-mapping (yet), returned buffer is dynamically allocated.
+fn allocate_page_from_disk(bt: *btree) ((size, *[PAGE_SIZE]u8) | io::error) = {
+	let page_offset: size = if (len(bt.free_page_list) > 0) {
+		let res = bt.free_page_list[0];
+		// TODO: Is the & needed here? I like hare in general, but I
+		// prefere the go-style append builtin for slices.
+		delete(bt.free_page_list[0]);
+		yield res;
+	} else {
+		let end = io::seek(bt.file, 0, io::whence::END)?;
+		assert(end: size % PAGE_SIZE == 0);
+		// This is a hacky workaround, the end could also be tracked in
+		// the btree structure. Write a byte at the end of the newly
+		// assigned page so that the next seek to end does not return
+		// the same position.
+		io::seek(bt.file, end + PAGE_SIZE: io::off - 1, io::whence::SET)?;
+		io::write(bt.file, [0])?;
+		yield end: size;
+	};
+
+	assert(find_in_cache(&bt.cache, page_offset) is void,
+		"page should not have been cached!");
+	return (page_offset, alloc([0...]): *[PAGE_SIZE]u8);
+};
+
 fn write_page_to_disk(bt: *btree, n: node) (void | io::error) = {
 	io::seek(bt.file, n.page_offset: io::off, io::whence::SET)?;
 	match (io::writeall(bt.file, n.raw)) {
@@ -65,7 +98,7 @@ fn write_page_to_disk(bt: *btree, n: node) (void | io::error) = {
 };
 
 fn hash_page_offset(x: size) size = {
-	assert(x % PAGE_SIZE == 0);
+	assert(x % PAGE_SIZE == 0, "page_offset must be multiple of page size");
 	return (x / PAGE_SIZE);
 };
 

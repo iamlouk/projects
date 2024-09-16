@@ -2,6 +2,8 @@ use bytes;
 use fmt;
 use strings;
 
+// TODO: Add more 'const'!
+
 export def PAGE_SIZE: size = 4096;
 
 export type node_type = enum { INNER, LEAF };
@@ -62,29 +64,42 @@ fn get_keys(n: node, dst: [][]u8) [][]u8 = {
 	return dst;
 };
 
-fn get_positions(n: node, dst: []size) []size = {
+fn get_key(n: node, i: size) []u8 = {
+	assert(i < n.num_keys);
+	let s = ((n.raw[4 + i*2]: size) << 8) | (n.raw[4 + i*2 + 1]: size);
+	if (n.typ == node_type::LEAF) {
+		let keylen = ((n.raw[s]: size) << 8) | (n.raw[s + 1]: size);
+		return n.raw[(s + 4)..(s + 4 + keylen)];
+	} else {
+		i += 1;
+		let e = ((n.raw[4 + i*2]: size) << 8) | (n.raw[4 + i*2 + 1]: size);
+		return n.raw[s..e];
+	};
+};
+
+fn get_poses(n: node, dst: []u32) []u32 = {
 	assert(n.typ == node_type::INNER);
 	let dst = dst[0..0];
 	let s = 4 + 2*(n.num_keys + 1);
 	for (let i: size = 0; i < n.num_keys + 1; i += 1) {
-		let off = ((n.raw[s+0]: size) << 24)
-			| ((n.raw[s+1]: size) << 16)
-			| ((n.raw[s+2]: size) << 8)
-			| ((n.raw[s+3]: size) << 0);
-		append(dst, (off: size) * PAGE_SIZE);
+		let off = ((n.raw[s+0]: u32) << 24)
+			| ((n.raw[s+1]: u32) << 16)
+			| ((n.raw[s+2]: u32) << 8)
+			| ((n.raw[s+3]: u32) << 0);
+		append(dst, off);
 		s += 4;
 	};
 	return dst;
 };
 
-fn get_position(n: node, i: size) size = {
+fn get_pos(n: node, i: size) u32 = {
 	assert(n.typ == node_type::INNER && i <= n.num_keys);
 	let s = 4 + 2*(n.num_keys + 1) + (i * 4);
-	let off = ((n.raw[s+0]: size) << 24)
-		| ((n.raw[s+1]: size) << 16)
-		| ((n.raw[s+2]: size) << 8)
-		| ((n.raw[s+3]: size) << 0);
-	return (off: size) * PAGE_SIZE;
+	let off = ((n.raw[s+0]: u32) << 24)
+		| ((n.raw[s+1]: u32) << 16)
+		| ((n.raw[s+2]: u32) << 8)
+		| ((n.raw[s+3]: u32) << 0);
+	return off;
 };
 
 fn get_vals(n: node, dst: [][]u8) [][]u8 = {
@@ -113,78 +128,64 @@ fn get_val(n: node, i: size) []u8 = {
 // page offset of the child node that could contain the key if this
 // is a inner node.
 // TODO: Use binary search?
-fn lookup_in_node(n: node, search_key: []u8) (bool, (size | []u8)) = {
-	let keys = get_keys(n, []);
-	defer free(keys);
-	if (n.typ == node_type::LEAF) {
-		for (let i: size = 0; i < n.num_keys; i += 1) {
-			let cmp = compare_bytes(search_key, keys[i]);
-			if (cmp == 0)
-				return (true, get_val(n, i));
-
-			if (cmp < 0)
-				return (false, i);
-		};
-		return (false, n.num_keys);
-	};
-
+fn lookup_in_node(n: node, search_key: []u8) (bool, size) = {
 	for (let i: size = 0; i < n.num_keys; i += 1) {
-		let cmp = compare_bytes(search_key, keys[i]);
+		let cmp = compare_bytes(search_key, get_key(n, i));
+		if (cmp == 0)
+			return (true, i);
 		if (cmp <= 0)
-			return (cmp == 0, get_position(n, i));
+			return (cmp == 0, i);
 	};
-	return (false, get_position(n, n.num_keys));
+	return (false, n.num_keys);
 };
 
 type full = !void;
 
-fn can_insert_into_leaf(n: node, key: []u8, val: []u8) (void | full) = {
-	assert(n.typ == node_type::LEAF);
-	assert(len(key) <= PAGE_SIZE / 4, "key is too large");
-	assert(len(val) <= PAGE_SIZE / 4, "val is too large");
-	let s = size_in_bytes(n);
-	s += 6 + len(key) + len(val);
-	if (s > PAGE_SIZE)
-		return full;
-	return void;
-};
-
-// A copy-on-write insert into a leaf.
-fn insert_into_leaf(orig: node, key: []u8, val: []u8, new_raw: *[PAGE_SIZE]u8) node = {
-	assert(can_insert_into_leaf(orig, key, val) is void);
-	let keys = get_keys(orig, []);
-	defer free(keys);
-	let vals = get_vals(orig, []);
-	defer free(vals);
-	let (key_exists, res) = lookup_in_node(orig, key);
-	
-
-	fmt::fatal("TODO...");
-};
-
-@test fn test_inner_node() void = {
-	// The test data:
-	let keys: [][]u8 = [];
-	append(keys, strings::toutf8("bar"));
-	append(keys, strings::toutf8("foo"));
-	append(keys, strings::toutf8("hello"));
-	append(keys, strings::toutf8("world"));
-	let positions: []u32 = [];
-	append(positions, 123);
-	append(positions, 42);
-	append(positions, 321);
-	append(positions, 420);
-	append(positions, 1234);
-	assert(len(keys) + 1 == len(positions));
-
-	// Setup of the page:
-	let raw: [PAGE_SIZE]u8 = [0...];
+fn build_leaf_node(keys: [][]u8, vals: [][]u8, page_offset: size, raw: *[PAGE_SIZE]u8) (node, size) = {
 	let buf: []u8 = raw[0..0];
-	static append(buf, 0x80);
-	static append(buf, 42);
+	assert(page_offset % PAGE_SIZE == 0, "page_offset needs to be page-aligned");
+	let page_offset = page_offset / PAGE_SIZE;
+	static append(buf, ((page_offset >> 8) & 0x7f): u8);
+	static append(buf, (page_offset & 0xff): u8);
 	static append(buf, (len(keys) >> 8): u8);
 	static append(buf, (len(keys) & 0xff): u8);
-	// The keys start after the offsets and child node positions.
+	let keyvals_off = 4 + 2*(len(keys) + 1);
+	for (let i: size = 0; i < len(keys); i += 1) {
+		if (i > 0) assert(compare_bytes(keys[i-1], keys[i]) < 0);
+		static append(buf, (keyvals_off >> 8): u8);
+		static append(buf, keyvals_off: u8);
+		keyvals_off += 4 + len(keys[i]) + len(vals[i]);
+	};
+	static append(buf, (keyvals_off >> 8): u8);
+	static append(buf, keyvals_off: u8);
+	for (let i: size = 0; i < len(vals); i += 1) {
+		let key = keys[i];
+		let val = vals[i];
+		static append(buf, (len(key) >> 8): u8);
+		static append(buf, (len(key) >> 0): u8);
+		static append(buf, (len(val) >> 8): u8);
+		static append(buf, (len(val) >> 0): u8);
+		static append(buf, key...);
+		static append(buf, val...);
+	};
+
+	return (node {
+		typ = node_type::LEAF,
+		page_offset = page_offset * PAGE_SIZE,
+		num_keys = len(keys),
+		raw = raw
+	}, len(buf));
+};
+
+fn build_inner_node(keys: [][]u8, positions: []u32, page_offset: size, raw: *[PAGE_SIZE]u8) (node, size) = {
+	assert(len(keys) + 1 == len(positions));
+	let buf: []u8 = raw[0..0];
+	assert(page_offset % PAGE_SIZE == 0, "page_offset needs to be page-aligned");
+	let page_offset = page_offset / PAGE_SIZE;
+	static append(buf, 0x80 | ((page_offset >> 8) & 0x7f): u8);
+	static append(buf, (page_offset & 0xff): u8);
+	static append(buf, (len(keys) >> 8): u8);
+	static append(buf, (len(keys) & 0xff): u8);
 	let keys_off = 4 + 2*(len(keys) + 1) + 4*(len(keys) + 1);
 	for (let i: size = 0; i < len(keys); i += 1) {
 		static append(buf, (keys_off >> 8): u8);
@@ -204,9 +205,89 @@ fn insert_into_leaf(orig: node, key: []u8, val: []u8, new_raw: *[PAGE_SIZE]u8) n
 		static append(buf, keys[i]...);
 	};
 
+	return (node {
+		typ = node_type::INNER,
+		page_offset = page_offset * PAGE_SIZE,
+		num_keys = len(keys),
+		raw = raw
+	}, len(buf));
+};
+
+fn split_leaf_node(orig: node, insert_key: []u8, insert_val: []u8,
+		a: (size, *[PAGE_SIZE]u8), b: (size, *[PAGE_SIZE]u8)) (node, node, size, []u8) = {
+	assert(orig.num_keys >= 2);
+	let keys: [][]u8 = get_keys(orig, []);
+	defer free(keys);
+	let vals: [][]u8 = get_vals(orig, []);
+	defer free(vals);
+
+	let (key_exists, insert_idx) = lookup_in_node(orig, insert_key);
+	if (!key_exists) {
+		insert(keys[insert_idx], insert_key);
+		insert(vals[insert_idx], insert_val);
+	} else {
+		vals[insert_idx] = insert_val;
+	};
+	let splitidx = len(keys) / 2;
+	let splitkey = keys[splitidx];
+	let a = build_leaf_node(keys[..(splitidx+1)], vals[..(splitidx+1)], a.0, a.1).0;
+	let b = build_leaf_node(keys[(splitidx+1)..], vals[(splitidx+1)..], b.0, b.1).0;
+	return (a, b, splitidx, splitkey);
+};
+
+// When splitting a inner node, the key at splitidx moves to the parent?
+// - All nodes on the LHS of splitidx and the inserted value go to the a node.
+// - The key at splitidx moves up, with a to it's left (replacing the pointer to
+//   orig) and b to it's right.
+// - The key on the RHS of splitidx go to the b node.
+fn split_inner_node(orig: node, insert_key: []u8, insert_pos: u32,
+		a: (size, *[PAGE_SIZE]u8), b: (size, *[PAGE_SIZE]u8)) (node, node, size, []u8) = {
+	assert(orig.num_keys > 1);
+	let keys: [][]u8 = get_keys(orig, []);
+	defer free(keys);
+	let poses: []u32 = get_poses(orig, []);
+	defer free(poses);
+
+	let (key_exists, insert_idx) = lookup_in_node(orig, insert_key);
+	if (!key_exists) {
+		insert(keys[insert_idx], insert_key);
+		insert(poses[insert_idx+1], insert_pos);
+	} else {
+		poses[insert_idx+1] = insert_pos;
+	};
+	let splitidx = len(keys) / 2;
+	let splitkey = keys[splitidx];
+	let a = build_inner_node(keys[..(splitidx+1)], poses[..(splitidx+2)], a.0, a.1).0;
+	// The splitkey is not in a or b but instead returned to the parent to
+	// be inserted there.
+	let b = build_inner_node(keys[(splitidx+2)..], poses[(splitidx+2)..], b.0, b.1).0;
+	return (a, b, splitidx, splitkey);
+};
+
+@test fn test_inner_node() void = {
+	// The test data:
+	let keys: [][]u8 = [];
+	append(keys, strings::toutf8("bar"));
+	append(keys, strings::toutf8("foo"));
+	append(keys, strings::toutf8("hello"));
+	append(keys, strings::toutf8("world"));
+	let positions: []u32 = [];
+	append(positions, 123);
+	append(positions, 42);
+	append(positions, 321);
+	append(positions, 420);
+	append(positions, 1234);
+	assert(len(keys) + 1 == len(positions));
+
+	// Setup of the page:
+	let raw: [PAGE_SIZE]u8 = [0...];
+	let (test, used) = build_inner_node(
+		keys, positions,
+		42 * PAGE_SIZE, &raw);
+
 	// The actual test:
-	let n = get_node(&raw);
-	assert(size_in_bytes(n) == len(buf));
+	let n = get_node(test.raw);
+	assert(size_in_bytes(n) == used);
 	assert(n.typ == node_type::INNER);
 	assert(n.page_offset == 42 * PAGE_SIZE);
 	assert(n.num_keys == len(keys));
@@ -218,21 +299,22 @@ fn insert_into_leaf(orig: node, key: []u8, val: []u8, new_raw: *[PAGE_SIZE]u8) n
 			assert(compare_bytes(keys[i-1], keys[i]) == -1);
 		};
 		assert(strings::fromutf8(keys[i])! == strings::fromutf8(test_keys[i])!);
+		assert(strings::fromutf8(keys[i])! == strings::fromutf8(get_key(n, i))!);
 	};
 
-	let test_positions = get_positions(n, []);
+	let test_positions = get_poses(n, []);
 	defer free(test_positions);
 	assert(len(test_positions) == len(positions));
 	for (let i: size = 0; i < len(positions); i += 1) {
-		assert(positions[i] * PAGE_SIZE == test_positions[i]);
-		assert(positions[i] * PAGE_SIZE == get_position(n, i));
+		assert(positions[i] == test_positions[i]);
+		assert(positions[i] == get_pos(n, i));
 	};
 
-	assert(lookup_in_node(n, strings::toutf8("aaa")).1 as size == positions[0] * PAGE_SIZE);
+	assert(lookup_in_node(n, strings::toutf8("aaa")).1 == 0);
 	for (let i: size = 0; i < len(keys); i += 1) {
-		assert(lookup_in_node(n, keys[i]).1 as size == positions[i] * PAGE_SIZE);
+		assert(lookup_in_node(n, keys[i]).1 == i);
 	};
-	assert(lookup_in_node(n, strings::toutf8("zzz")).1 as size == positions[len(keys)] * PAGE_SIZE);
+	assert(lookup_in_node(n, strings::toutf8("zzz")).1 == n.num_keys);
 };
 
 @test fn test_leaf_node() void = {
@@ -251,34 +333,11 @@ fn insert_into_leaf(orig: node, key: []u8, val: []u8, new_raw: *[PAGE_SIZE]u8) n
 
 	// Setup of the page:
 	let raw: [PAGE_SIZE]u8 = [0...];
-	let buf: []u8 = raw[0..0];
-	static append(buf, 0x00);
-	static append(buf, 42);
-	static append(buf, (len(keys) >> 8): u8);
-	static append(buf, (len(keys) & 0xff): u8);
-	// The keys start after the offsets.
-	let keyvals_off = 4 + 2*(len(keys) + 1);
-	for (let i: size = 0; i < len(keys); i += 1) {
-		static append(buf, (keyvals_off >> 8): u8);
-		static append(buf, keyvals_off: u8);
-		keyvals_off += 4 + len(keys[i]) + len(vals[i]);
-	};
-	static append(buf, (keyvals_off >> 8): u8);
-	static append(buf, keyvals_off: u8);
-	for (let i: size = 0; i < len(vals); i += 1) {
-		let key = keys[i];
-		let val = vals[i];
-		static append(buf, (len(key) >> 8): u8);
-		static append(buf, (len(key) >> 0): u8);
-		static append(buf, (len(val) >> 8): u8);
-		static append(buf, (len(val) >> 0): u8);
-		static append(buf, key...);
-		static append(buf, val...);
-	};
+	let (test, used) = build_leaf_node(keys, vals, 42 * PAGE_SIZE, &raw);
 
 	// The actual test:
-	let n = get_node(&raw);
-	assert(size_in_bytes(n) == len(buf));
+	let n = get_node(test.raw);
+	assert(size_in_bytes(n) == used);
 	assert(n.typ == node_type::LEAF);
 	assert(n.page_offset == 42 * PAGE_SIZE);
 	assert(n.num_keys == len(keys));
@@ -287,6 +346,7 @@ fn insert_into_leaf(orig: node, key: []u8, val: []u8, new_raw: *[PAGE_SIZE]u8) n
 	assert(len(test_keys) == len(keys));
 	for (let i: size = 0; i < len(keys); i += 1) {
 		assert(strings::fromutf8(keys[i])! == strings::fromutf8(test_keys[i])!);
+		assert(strings::fromutf8(keys[i])! == strings::fromutf8(get_key(n, i))!);
 	};
 
 	let test_vals = get_vals(n, []);
@@ -300,8 +360,99 @@ fn insert_into_leaf(orig: node, key: []u8, val: []u8, new_raw: *[PAGE_SIZE]u8) n
 	assert(lookup_in_node(n, strings::toutf8("notfound")).0 == false);
 	for (let i: size = 0; i < len(keys); i += 1) {
 		let res = lookup_in_node(n, keys[i]);
-		assert(res.0 == true && bytes::equal(vals[i], res.1 as []u8));
+		assert(res.0 == true && res.1 == i);
 	};
+};
+
+@test fn test_leaf_split() void = {
+	// The test data:
+	let keys: [][]u8 = [];
+	append(keys, strings::toutf8("aaa"));
+	append(keys, strings::toutf8("bbb"));
+	append(keys, strings::toutf8("ddd"));
+	append(keys, strings::toutf8("eee"));
+	let vals: [][]u8 = [];
+	append(vals, strings::toutf8("AAA"));
+	append(vals, strings::toutf8("BBB"));
+	append(vals, strings::toutf8("DDD"));
+	append(vals, strings::toutf8("EEE"));
+	assert(len(keys) == len(vals));
+
+	// Setup of the page:
+	let raw: [PAGE_SIZE]u8 = [0...];
+	let orig = build_leaf_node(keys, vals, 42 * PAGE_SIZE, &raw).0;
+
+	let a: *[PAGE_SIZE]u8 = alloc([0...]);
+	defer free(a);
+	let b: *[PAGE_SIZE]u8 = alloc([0...]);
+	defer free(b);
+
+	let (a, b, split_idx, split_key) = split_leaf_node(orig,
+		strings::toutf8("ccc"), strings::toutf8("CCC"),
+		(123 * PAGE_SIZE, a), (456 * PAGE_SIZE, b));
+	assert(a.page_offset == 123 * PAGE_SIZE);
+	assert(b.page_offset == 456 * PAGE_SIZE);
+	assert(a.num_keys == 3);
+	assert(b.num_keys == 2);
+	assert(strings::fromutf8(split_key)! == "ccc" && split_idx == 2);
+	assert(compare_bytes(get_key(a, 0), strings::toutf8("aaa")) == 0);
+	assert(compare_bytes(get_val(a, 0), strings::toutf8("AAA")) == 0);
+	assert(compare_bytes(get_key(a, 1), strings::toutf8("bbb")) == 0);
+	assert(compare_bytes(get_val(a, 1), strings::toutf8("BBB")) == 0);
+	assert(compare_bytes(get_key(a, 2), strings::toutf8("ccc")) == 0);
+	assert(compare_bytes(get_val(a, 2), strings::toutf8("CCC")) == 0);
+	assert(compare_bytes(get_key(b, 0), strings::toutf8("ddd")) == 0);
+	assert(compare_bytes(get_val(b, 0), strings::toutf8("DDD")) == 0);
+	assert(compare_bytes(get_key(b, 1), strings::toutf8("eee")) == 0);
+	assert(compare_bytes(get_val(b, 1), strings::toutf8("EEE")) == 0);
+};
+
+@test fn test_inner_split() void = {
+	// The test data:
+	let keys: [][]u8 = [];
+	append(keys, strings::toutf8("aaa"));
+	append(keys, strings::toutf8("bbb"));
+	append(keys, strings::toutf8("ddd"));
+	append(keys, strings::toutf8("eee"));
+	let positions: []u32 = [];
+	append(positions, 1);
+	append(positions, 2);
+	append(positions, 3);
+	append(positions, 4);
+	append(positions, 5);
+	assert(len(keys) + 1 == len(positions));
+
+	// Setup of the page:
+	let raw: *[PAGE_SIZE]u8 = alloc([0...]);
+	defer free(raw);
+	assert(len(keys) + 1 == len(positions));
+	let orig = build_inner_node(
+		keys, positions,
+		42 * PAGE_SIZE, raw).0;
+
+	let a: *[PAGE_SIZE]u8 = alloc([0...]);
+	defer free(a);
+	let b: *[PAGE_SIZE]u8 = alloc([0...]);
+	defer free(b);
+
+	let (a, b, splitidx, splitkey) = split_inner_node(orig,
+		strings::toutf8("ccc"), 10,
+		(123 * PAGE_SIZE, a), (456 * PAGE_SIZE, b));
+	assert(a.page_offset == 123 * PAGE_SIZE);
+	assert(b.page_offset == 456 * PAGE_SIZE);
+	assert(a.num_keys == 3);
+	assert(b.num_keys == 1);
+	assert(strings::fromutf8(splitkey)! == "ccc");
+	assert(compare_bytes(get_key(a, 0), strings::toutf8("aaa")) == 0);
+	assert(compare_bytes(get_key(a, 1), strings::toutf8("bbb")) == 0);
+	assert(compare_bytes(get_key(a, 2), strings::toutf8("ccc")) == 0);
+	assert(compare_bytes(get_key(b, 0), strings::toutf8("eee")) == 0);
+	assert(get_pos(a, 0) == 1);
+	assert(get_pos(a, 1) == 2);
+	assert(get_pos(a, 2) == 3);
+	assert(get_pos(a, 3) == 10);
+	assert(get_pos(b, 0) == 4);
+	assert(get_pos(b, 1) == 5);
 };
 
 fn compare_bytes(a: []u8, b: []u8) int = {
