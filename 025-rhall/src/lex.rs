@@ -119,7 +119,7 @@ impl<'a> Lexer<'a> {
             }
 
             if c == '#' {
-                while let Some(c) = self.chars.next() {
+                for c in self.chars.by_ref() {
                     if c == '\n' {
                         self.sloc.line += 1;
                         self.sloc.col = 1;
@@ -168,12 +168,12 @@ impl<'a> Lexer<'a> {
                         Some('x') => {
                             let d1 = self.next_char();
                             let d2 = self.next_char();
-                            if d1.is_none() || !d1.unwrap().is_digit(16) ||
-                               d2.is_none() || !d2.unwrap().is_digit(16) {
-                                return Err(Error::Lexer(self.sloc, format!("illegal escape sequence")))
+                            if d1.is_none() || !d1.unwrap().is_ascii_hexdigit() ||
+                               d2.is_none() || !d2.unwrap().is_ascii_hexdigit() {
+                                return Err(Error::Lexer(self.sloc, "illegal escape sequence".to_string()))
                             }
-                            (((d1.unwrap().to_ascii_lowercase() as u8 - 'a' as u8) << 4) |
-                              (d2.unwrap().to_ascii_lowercase() as u8 - 'a' as u8)) as char
+                            (((d1.unwrap().to_ascii_lowercase() as u8 - b'a') << 4) |
+                              (d2.unwrap().to_ascii_lowercase() as u8 - b'a')) as char
                         },
                         Some('n') => '\n',
                         Some('t') => '\t',
@@ -197,7 +197,7 @@ impl<'a> Lexer<'a> {
         if let Some(s) = self.string_pool.get(self.buffer.as_str()) {
             s.clone()
         } else {
-            let s = Rc::from(self.buffer.as_str().clone());
+            let s = Rc::from(self.buffer.clone());
             self.string_pool.insert(Rc::clone(&s));
             s
         }
@@ -287,7 +287,7 @@ impl<'a> std::iter::Iterator for Lexer<'a> {
                 self.buffer.clear();
                 loop {
                     let c = match self.next_char() {
-                        None => return Some(Err(Error::Lexer(self.sloc, format!("Unterminated string litteral")))),
+                        None => return Some(Err(Error::Lexer(self.sloc, "Unterminated string litteral".to_string()))),
                         Some('`') => break,
                         Some(c) => c,
                     };
