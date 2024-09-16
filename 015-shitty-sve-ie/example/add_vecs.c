@@ -11,7 +11,7 @@ void classic_vec_add(uint64_t n, float *a, float *b) {
 
 int main() {
 	srand(42);
-	uint64_t n = 500;
+	uint64_t n = 20000;
 	float *a1 = malloc(n * sizeof(float));
 	float *a2 = malloc(n * sizeof(float));
 	float *b = malloc(n * sizeof(float));
@@ -32,6 +32,9 @@ int main() {
 			return EXIT_FAILURE;
 
 	printf("success!\n");
+	free(a1);
+	free(a2);
+	free(b);
 	return EXIT_SUCCESS;
 }
 
