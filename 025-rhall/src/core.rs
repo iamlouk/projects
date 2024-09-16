@@ -132,9 +132,9 @@ impl Type {
         }
     }
 
-    pub fn get_rettyp(self: &Rc<Self>) -> Rc<Self> {
+    pub fn decompose_lambda(self: &Rc<Self>) -> (Vec<(Rc<str>, Rc<Type>)>, Rc<Self>) {
         match self.as_ref() {
-            Type::Lambda(_, rettyp) => rettyp.clone(),
+            Type::Lambda(argtypes, rettyp) => (argtypes.clone(), rettyp.clone()),
             _ => panic!(),
         }
     }
@@ -156,7 +156,7 @@ pub struct Builtin {
     pub name: &'static str,
     pub argtypes: Vec<(Rc<str>, Rc<Type>)>,
     pub rettyp: Rc<Type>,
-    pub f: Box<dyn Fn(Vec<Value>) -> Result<Value, Error>>,
+    pub f: Box<dyn Fn(&mut Env, Vec<Value>) -> Result<Value, Error>>,
 }
 
 impl Debug for Builtin {
@@ -183,6 +183,30 @@ impl Value {
             )),
             Value::Builtin(b) => Rc::new(Type::Lambda(b.argtypes.clone(), b.rettyp.clone())),
             Value::Option(t, _) => t.clone(),
+        }
+    }
+
+    pub fn expect_type(&self) -> Rc<Type> {
+        match self {
+            Value::Type(t) => t.clone(),
+            _ => panic!(),
+        }
+    }
+
+    pub fn apply(&self, sloc: SLoc, env: &mut Env, args: Vec<Value>) -> Result<Value, Error> {
+        match self {
+            Value::Lambda(argnames, body) => {
+                assert!(args.len() == argnames.len());
+                for (value, (name, _)) in args.into_iter().zip(argnames) {
+                    env.push(name, value);
+                }
+
+                let res = env.eval(&body.borrow())?;
+                env.pop(argnames.len());
+                Ok(res)
+            }
+            Value::Builtin(b) => (b.f)(env, args),
+            _ => Err(Error::Uncallable(sloc, format!("{}", self))),
         }
     }
 }
