@@ -1,4 +1,4 @@
-use crate::core::{SLoc, Error};
+use crate::core::{Error, SLoc};
 
 use std::rc::Rc;
 
@@ -7,7 +7,7 @@ pub struct Lexer<'a> {
     chars: std::iter::Peekable<std::str::Chars<'a>>, // Maybe use custom (cloning) peek logic?
     buffer: String,
     string_pool: &'a mut std::collections::HashSet<Rc<str>>,
-    peeked: Option<Result<(SLoc, Tok), Error>>
+    peeked: Option<Result<(SLoc, Tok), Error>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -55,28 +55,34 @@ impl Tok {
     pub fn id(&self) -> Option<&str> {
         match self {
             Self::Id(s) => Some(s.as_ref()),
-            _ => None
+            _ => None,
         }
     }
 
     pub fn str(&self) -> Option<&str> {
         match self {
             Self::String(s) => Some(s.as_ref()),
-            _ => None
+            _ => None,
         }
     }
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(
-            input: &'a str, file_id: u16,
-            string_pool: &'a mut std::collections::HashSet<Rc<str>>) -> Self {
+        input: &'a str,
+        file_id: u16,
+        string_pool: &'a mut std::collections::HashSet<Rc<str>>,
+    ) -> Self {
         Self {
-            sloc: SLoc { line: 1, col: 0, file_id },
+            sloc: SLoc {
+                line: 1,
+                col: 0,
+                file_id,
+            },
             chars: input.chars().peekable(),
             buffer: String::with_capacity(64),
             string_pool,
-            peeked: None
+            peeked: None,
         }
     }
 
@@ -91,7 +97,7 @@ impl<'a> Lexer<'a> {
                 self.sloc.col += 1;
             }
 
-            return Some(c)
+            return Some(c);
         }
         None
     }
@@ -129,9 +135,7 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            if c == '/' && self.chars.peek().cloned() == Some('*') {
-
-            }
+            if c == '/' && self.chars.peek().cloned() == Some('*') {}
 
             self.sloc.col += 1;
             return Some(c);
@@ -154,7 +158,8 @@ impl<'a> Lexer<'a> {
             self.buffer.push(c);
         }
 
-        self.buffer.parse::<i64>()
+        self.buffer
+            .parse::<i64>()
             .map_err(|e| Error::Lexer(self.sloc, format!("illegal integer literal: {:?}", e)))
     }
 
@@ -168,27 +173,37 @@ impl<'a> Lexer<'a> {
                         Some('x') => {
                             let d1 = self.next_char();
                             let d2 = self.next_char();
-                            if d1.is_none() || !d1.unwrap().is_ascii_hexdigit() ||
-                               d2.is_none() || !d2.unwrap().is_ascii_hexdigit() {
-                                return Err(Error::Lexer(self.sloc, "illegal escape sequence".to_string()))
+                            if d1.is_none()
+                                || !d1.unwrap().is_ascii_hexdigit()
+                                || d2.is_none()
+                                || !d2.unwrap().is_ascii_hexdigit()
+                            {
+                                return Err(Error::Lexer(
+                                    self.sloc,
+                                    "illegal escape sequence".to_string(),
+                                ));
                             }
-                            (((d1.unwrap().to_ascii_lowercase() as u8 - b'a') << 4) |
-                              (d2.unwrap().to_ascii_lowercase() as u8 - b'a')) as char
-                        },
+                            (((d1.unwrap().to_ascii_lowercase() as u8 - b'a') << 4)
+                                | (d2.unwrap().to_ascii_lowercase() as u8 - b'a'))
+                                as char
+                        }
                         Some('n') => '\n',
                         Some('t') => '\t',
                         Some('r') => '\r',
                         Some('"') => '\"',
                         Some('\\') => '\\',
-                        Some(c) =>
-                            return Err(Error::Lexer(self.sloc, format!("unknown escape character: {:?}", c))),
-                        None =>
-                            return Err(Error::UnexpectedEOF)
+                        Some(c) => {
+                            return Err(Error::Lexer(
+                                self.sloc,
+                                format!("unknown escape character: {:?}", c),
+                            ))
+                        }
+                        None => return Err(Error::UnexpectedEOF),
                     };
                     self.buffer.push(x);
-                },
+                }
                 Some(c) => self.buffer.push(c),
-                None => return Err(Error::UnexpectedEOF)
+                None => return Err(Error::UnexpectedEOF),
             }
         }
     }
@@ -209,12 +224,12 @@ impl<'a> std::iter::Iterator for Lexer<'a> {
 
     fn next(&mut self) -> Option<<Self as Iterator>::Item> {
         if self.peeked.is_some() {
-            return self.peeked.take()
+            return self.peeked.take();
         }
 
         let c = match self.skip_whitespace() {
             Some(c) => c,
-            None => return None
+            None => return None,
         };
 
         Some(match c {
@@ -237,26 +252,26 @@ impl<'a> std::iter::Iterator for Lexer<'a> {
                 Some('>') => {
                     self.next_char();
                     Ok((self.sloc, Tok::Arrow))
-                },
-                _ => Ok((self.sloc, Tok::Minus))
+                }
+                _ => Ok((self.sloc, Tok::Minus)),
             },
             '=' => match self.chars.peek() {
                 Some('=') => {
                     self.next_char();
                     Ok((self.sloc, Tok::Equal))
-                },
+                }
                 Some('>') => {
                     self.next_char();
                     Ok((self.sloc, Tok::ThickArrow))
-                },
+                }
                 _ => Ok((self.sloc, Tok::Assign)),
             },
             '<' => match self.chars.peek() {
                 Some('=') => {
                     self.next_char();
                     Ok((self.sloc, Tok::LowerOrEqual))
-                },
-                _ => Ok((self.sloc, Tok::Lower))
+                }
+                _ => Ok((self.sloc, Tok::Lower)),
             },
 
             '\\' | 'λ' => Ok((self.sloc, Tok::Lambda)),
@@ -265,36 +280,51 @@ impl<'a> std::iter::Iterator for Lexer<'a> {
             '⊥' => Ok((self.sloc, Tok::Boolean(false))),
 
             '0' => match self.chars.peek().cloned() {
-                Some('b') => self.parse_integer(None, 2).map(|i| (self.sloc, Tok::Integer(i))),
-                Some('o') => self.parse_integer(None, 8).map(|i| (self.sloc, Tok::Integer(i))),
-                Some('x') => self.parse_integer(None, 16).map(|i| (self.sloc, Tok::Integer(i))),
+                Some('b') => self
+                    .parse_integer(None, 2)
+                    .map(|i| (self.sloc, Tok::Integer(i))),
+                Some('o') => self
+                    .parse_integer(None, 8)
+                    .map(|i| (self.sloc, Tok::Integer(i))),
+                Some('x') => self
+                    .parse_integer(None, 16)
+                    .map(|i| (self.sloc, Tok::Integer(i))),
                 Some(c) if !c.is_alphanumeric() => Ok((self.sloc, Tok::Integer(0))),
                 None => Ok((self.sloc, Tok::Integer(0))),
-                Some(c) => Err(Error::Lexer(self.sloc, format!("illegal character following a 0: {:?}", c))),
+                Some(c) => Err(Error::Lexer(
+                    self.sloc,
+                    format!("illegal character following a 0: {:?}", c),
+                )),
             },
-            '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' =>
-                self.parse_integer(Some(c), 10).map(|i| (self.sloc, Tok::Integer(i))),
+            '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' => self
+                .parse_integer(Some(c), 10)
+                .map(|i| (self.sloc, Tok::Integer(i))),
 
             '"' => {
                 self.buffer.clear();
                 if let Err(e) = self.parse_string_into_buffer() {
-                    return Some(Err(e))
+                    return Some(Err(e));
                 }
                 Ok((self.sloc, Tok::String(self.get_buffer_as_string())))
-            },
+            }
 
             '`' => {
                 self.buffer.clear();
                 loop {
                     let c = match self.next_char() {
-                        None => return Some(Err(Error::Lexer(self.sloc, "Unterminated string litteral".to_string()))),
+                        None => {
+                            return Some(Err(Error::Lexer(
+                                self.sloc,
+                                "Unterminated string litteral".to_string(),
+                            )))
+                        }
                         Some('`') => break,
                         Some(c) => c,
                     };
                     self.buffer.push(c);
                 }
                 Ok((self.sloc, Tok::String(self.get_buffer_as_string())))
-            },
+            }
 
             c if c.is_alphabetic() || c == '_' => {
                 self.buffer.clear();
@@ -311,18 +341,18 @@ impl<'a> std::iter::Iterator for Lexer<'a> {
                 match self.buffer.as_str() {
                     "lambda" => Ok((self.sloc, Tok::Lambda)),
                     "forall" => Ok((self.sloc, Tok::Forall)),
-                    "true"   => Ok((self.sloc, Tok::Boolean(true))),
-                    "false"  => Ok((self.sloc, Tok::Boolean(false))),
-                    "let"    => Ok((self.sloc, Tok::Let)),
-                    "in"     => Ok((self.sloc, Tok::In)),
-                    "if"     => Ok((self.sloc, Tok::If)),
-                    "then"   => Ok((self.sloc, Tok::Then)),
-                    "else"   => Ok((self.sloc, Tok::Else)),
-                    _ => Ok((self.sloc, Tok::Id(self.get_buffer_as_string())))
+                    "true" => Ok((self.sloc, Tok::Boolean(true))),
+                    "false" => Ok((self.sloc, Tok::Boolean(false))),
+                    "let" => Ok((self.sloc, Tok::Let)),
+                    "in" => Ok((self.sloc, Tok::In)),
+                    "if" => Ok((self.sloc, Tok::If)),
+                    "then" => Ok((self.sloc, Tok::Then)),
+                    "else" => Ok((self.sloc, Tok::Else)),
+                    _ => Ok((self.sloc, Tok::Id(self.get_buffer_as_string()))),
                 }
-            },
+            }
 
-            _ => todo!()
+            _ => todo!(),
         })
     }
 }
@@ -357,4 +387,3 @@ mod test {
         assert!(lexer.next().is_none());
     }
 }
-

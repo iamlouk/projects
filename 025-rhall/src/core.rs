@@ -1,12 +1,15 @@
-use std::{rc::Rc, fmt::{Display, Debug}};
+use std::{
+    fmt::{Debug, Display},
+    rc::Rc,
+};
 
-use crate::{lex, ast::NodeRef, ast::Node};
+use crate::{ast::Node, ast::NodeRef, lex};
 
 #[derive(Clone, Copy, Debug)]
 pub struct SLoc {
     pub line: u32,
     pub col: u16,
-    pub file_id: u16
+    pub file_id: u16,
 }
 
 #[derive(Debug, Clone)]
@@ -14,7 +17,11 @@ pub enum Error {
     Lexer(SLoc, String),
     Parser(SLoc, String),
     UnexpectedEOF,
-    ExpectedToken { sloc: SLoc, expected: lex::Tok, found: lex::Tok },
+    ExpectedToken {
+        sloc: SLoc,
+        expected: lex::Tok,
+        found: lex::Tok,
+    },
     UndefinedValue(Rc<str>),
     Uncallable(NodeRef),
 }
@@ -30,7 +37,7 @@ pub enum Type {
     String,
     // List(Rc<Type>),
     // Record(Rc<[(Rc<str>, Rc<Type>)]>),
-    Lambda(Rc<[Rc<Type>]>, Rc<Type>)
+    Lambda(Rc<[Rc<Type>]>, Rc<Type>),
 }
 
 impl Display for Type {
@@ -87,8 +94,7 @@ impl Display for Value {
                     }
                 }
                 write!(f, ") -> {}", node.as_ref().borrow())
-            },
+            }
         }
     }
 }
-
