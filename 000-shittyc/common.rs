@@ -33,11 +33,11 @@ pub enum Error {
 }
 
 #[allow(dead_code)]
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, PartialOrd, Debug)]
 pub enum Type {
     Unknown,
     Void,
-    Int { bits: usize, signed: bool },
+    Int { bits: u8, signed: bool },
     Ptr { ety: Rc<Type>, volatile: bool, constant: bool, restrict: bool },
     Array(Rc<Type>, Option<usize>),
     Struct { name: Option<Rc<str>>, fields: Rc<Vec<(Rc<str>, Type)>> },

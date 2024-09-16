@@ -349,9 +349,9 @@ impl Parser {
                 },
                 Err(e) => return Err(e)
             },
-            Tok::IntLit(n) => Box::new(Expr::Int {
-                sloc, num: n,
-                typ: Type::Int { bits: 64, signed: true }
+            Tok::IntLit { signed, bits, val } => Box::new(Expr::Int {
+                sloc, num: val,
+                typ: Type::Int { bits, signed }
             }),
             Tok::Id(name) => Box::new(Expr::Id {
                 sloc, typ: Type::Unknown, name }),
@@ -491,7 +491,7 @@ impl Parser {
                 (_, Tok::LBracket) => {
                     lex.next()?;
                     let size = match lex.next()? {
-                        (_, Tok::IntLit(n)) => n,
+                        (_, Tok::IntLit { signed: _, bits: _, val: n }) => n,
                         (sloc, t) => return Err(Error::UnexpectedTok(
                             sloc, format!("expected array size, found: {:?}", t))),
                     };

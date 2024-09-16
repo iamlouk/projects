@@ -14,7 +14,7 @@ pub enum Tok {
     /* Literals: */
     Id(Rc<str>),
     String(Rc<str>),
-    IntLit(i64),
+    IntLit { signed: bool, bits: u8, val: i64 },
     RealLit(f64),
     CharLit(char),
 
@@ -135,7 +135,10 @@ impl Display for Tok {
             },
             Id(id) => return write!(f, "{}", &**id),
             String(str) => return write!(f, "{:?}", &**str),
-            IntLit(x) => return write!(f, "{:x}", x),
+            IntLit { signed: true, bits: 32, val } => return write!(f, "{}", val),
+            IntLit { signed, bits, val } =>
+                return write!(f, "{:#X}{}{}", val,
+                    if *signed {"i"} else {"u"}, bits),
             RealLit(x) => return write!(f, "{}", x),
             CharLit(x) => match *x {
                 '\n' => "'\\n'",
@@ -484,15 +487,41 @@ impl<'input> File<'input> {
                 };
 
                 while let Some(c) = self.input.get(self.pos).cloned() {
-                    if c != b'_' && c != b'.' && !c.is_ascii_alphanumeric() {
+                    if c != b'_' && c != b'.' && !c.is_ascii_hexdigit() {
                         break;
                     }
                     state.buf.push(c as char);
                     self.next_char();
                 }
 
+                let (signed, bits) = match self.input.get(self.pos).cloned() {
+                    Some(x) if x == b'u' || x == b'i' => {
+                        self.next_char();
+                        let signed = x == b'i';
+                        let (a, b) = (
+                            self.input.get(self.pos).cloned(),
+                            self.input.get(self.pos + 1).cloned());
+                        match (a, b) {
+                            (Some(b'8'), _) => { self.next_char(); (signed, 8) },
+                            (Some(b'1'), Some(b'6')) =>
+                                { self.next_char(); self.next_char(); (signed, 16) },
+                            (Some(b'3'), Some(b'2')) =>
+                                { self.next_char(); self.next_char(); (signed, 32) },
+                            (Some(b'6'), Some(b'4')) =>
+                                { self.next_char(); self.next_char(); (signed, 64) },
+                            (Some(b'l'), _) => { self.next_char(); (signed, 64) },
+                            (Some(x), _) if !x.is_ascii_alphanumeric() => (signed, 32),
+                            (None, _) => (signed, 32),
+                            _ => return Err(Error::Lex(sloc,
+                                format!("unexpected interger literal suffix")))
+                        }
+                    },
+                    Some(b'l') => { self.next_char(); (true, 64) }
+                    _ => (true, 32)
+                };
+
                 match i64::from_str_radix(state.buf.as_str(), radix) {
-                    Ok(num) => Ok((sloc, Tok::IntLit(num))),
+                    Ok(num) => Ok((sloc, Tok::IntLit { signed, bits, val: num })),
                     Err(e) => Err(Error::InvalidInt(sloc, e)),
                 }
             }
@@ -769,9 +798,32 @@ mod test {
         assert_matches!(toks[5], Tok::String(ref s) if s.as_ref() == "bar");
         assert_matches!(toks[6], Tok::RParen);
         assert_matches!(toks[7], Tok::MinusMinus);
-        assert_matches!(toks[8], Tok::IntLit(42));
+        assert_matches!(toks[8], Tok::IntLit { signed: true, bits: 32, val: 42 });
         assert_matches!(toks[9], Tok::Modulo);
-        assert_matches!(toks[10], Tok::IntLit(0x1234));
+        assert_matches!(toks[10], Tok::IntLit { signed: true, bits: 32, val: 0x1234 });
+    }
+
+    #[test]
+    fn ints() {
+        let toks = lex("42,42u,42i8,42u16,42i32,42u64,42ul,42l");
+        println!("tokens: {:?}", toks);
+        assert_eq!(toks.as_slice(), &[
+            Tok::IntLit { signed: true, bits: 32, val: 42 },
+            Tok::Comma,
+            Tok::IntLit { signed: false, bits: 32, val: 42 },
+            Tok::Comma,
+            Tok::IntLit { signed: true, bits: 8, val: 42 },
+            Tok::Comma,
+            Tok::IntLit { signed: false, bits: 16, val: 42 },
+            Tok::Comma,
+            Tok::IntLit { signed: true, bits: 32, val: 42 },
+            Tok::Comma,
+            Tok::IntLit { signed: false, bits: 64, val: 42 },
+            Tok::Comma,
+            Tok::IntLit { signed: false, bits: 64, val: 42 },
+            Tok::Comma,
+            Tok::IntLit { signed: true, bits: 64, val: 42 },
+        ]);
     }
 
     #[test]
@@ -802,7 +854,7 @@ mod test {
         println!("tokens: {:?}", toks);
         assert_eq!(toks.len(), 3);
         assert_matches!(toks[0], Tok::Id(ref id) if id.as_ref() == "foo");
-        assert_matches!(toks[1], Tok::IntLit(1));
+        assert_matches!(toks[1], Tok::IntLit { signed: true, bits: 32, val: 1 });
         assert_matches!(toks[2], Tok::Id(ref id) if id.as_ref() == "foo");
     }
 
@@ -829,7 +881,7 @@ mod test {
         assert_matches!(toks[11], Tok::If);
         assert_matches!(toks[12], Tok::Id(ref id) if id.as_ref() == "n");
         assert_matches!(toks[13], Tok::Smaller);
-        assert_matches!(toks[14], Tok::IntLit(2));
+        assert_matches!(toks[14], Tok::IntLit { signed: true, bits: 32, val: 2 });
         assert_matches!(toks[15], Tok::LBraces);
         assert_matches!(toks[16], Tok::Id(ref id) if id.as_ref() == "n");
         assert_matches!(toks[17], Tok::RBraces);
@@ -839,14 +891,14 @@ mod test {
         assert_matches!(toks[21], Tok::LParen);
         assert_matches!(toks[22], Tok::Id(ref id) if id.as_ref() == "n");
         assert_matches!(toks[23], Tok::Minus);
-        assert_matches!(toks[24], Tok::IntLit(2));
+        assert_matches!(toks[24], Tok::IntLit { signed: true, bits: 32, val: 2 });
         assert_matches!(toks[25], Tok::RParen);
         assert_matches!(toks[26], Tok::Plus);
         assert_matches!(toks[27], Tok::Id(ref id) if id.as_ref() == "fibs");
         assert_matches!(toks[28], Tok::LParen);
         assert_matches!(toks[29], Tok::Id(ref id) if id.as_ref() == "n");
         assert_matches!(toks[30], Tok::Minus);
-        assert_matches!(toks[31], Tok::IntLit(1));
+        assert_matches!(toks[31], Tok::IntLit { signed: true, bits: 32, val: 1 });
         assert_matches!(toks[32], Tok::RParen);
         assert_matches!(toks[33], Tok::RBraces);
         assert_matches!(toks[34], Tok::SemiColon);
