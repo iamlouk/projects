@@ -15,15 +15,18 @@ use time;
 
 export type wsconn = struct {
 	fd: net::socket,
-	client_addr: ip::addr,
-	client_port: u16,
+	client: (ip::addr, u16),
 	bufstream: bufio::stream,
-	path: str,
-	headers: []([]u8, str, str),
-	ws_key: []u8,
 	rbuf: []u8,
 	wbuf: []u8,
-	timestamp_last_frame: time::instant,
+	path: str,
+	headers: []([]u8, str, str),
+
+	timestamp: time::instant,
+	handshake_done: bool,
+	waiting_for_pong: bool,
+	timestamp_last_pong: time::instant,
+
 	on_message: *fn(wsc: *wsconn, msg: ([]u8 | str)) (void | []u8 | str),
 };
 
@@ -42,7 +45,10 @@ def FRAME_CLOSE: u8 = 8;
 def FRAME_PING: u8 = 9;
 def FRAME_PONG: u8 = 10;
 
-// Yes, this leaks memory on certain error paths. And also, it will to blocking reads.
+const TIMEOUT_PING: time::duration = 10 * time::MINUTE;
+const TIMEOUT_PONG: time::duration = 10 * time::SECOND;
+
+// There are potentially-blocking reads/writes in here!
 // I am not sure what the ideal way of doing this would be, probably setting the
 // non-blocking flag for the fd and then split this function into chunks?
 export fn handshake(wsc: *wsconn) (void | io::error | utf8::invalid | errors::invalid) = {
@@ -97,14 +103,12 @@ export fn handshake(wsc: *wsconn) (void | io::error | utf8::invalid | errors::in
 		case "sec-websocket-version" =>
 			if (val != "13")
 				return errors::invalid;
-		case "sec-websocket-key" => {
+		case "sec-websocket-key" =>
 			ws_key_str = val;
-			wsc.ws_key = base64::decodestr(&base64::std_encoding, val)?;
-		};
 		case => yield;
 		};
 	};
-	if (!connection_upgrade || !upgrade_websocket || len(wsc.ws_key) == 0)
+	if (!connection_upgrade || !upgrade_websocket || len(ws_key_str) == 0)
 		return errors::invalid;
 
 	let concatenated = strings::concat(ws_key_str, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
@@ -122,46 +126,38 @@ export fn handshake(wsc: *wsconn) (void | io::error | utf8::invalid | errors::in
 		"Sec-WebSocket-Accept: {}\r\n\r\n",
 		inbase64)?;
 	bufio::flush(&wsc.bufstream)?;
+	wsc.handshake_done = true;
+	fmt::printfln("Successfull handshake with {}:{} (fd={})",
+		ip::string(wsc.client.0), wsc.client.1,
+		wsc.fd: u32)!;
 	return void;
 };
 
 export fn init_connection(
 		fd: net::socket,
-		on_message: *fn(wsc: *wsconn, msg: ([]u8 | str)) (void | []u8 | str)) nullable *wsconn = {
+		on_message: *fn(wsc: *wsconn, msg: ([]u8 | str)) (void | []u8 | str)) *wsconn = {
 	let rbuf: []u8 = alloc([0...], os::BUFSZ);
 	let wbuf: []u8 = alloc([0...], os::BUFSZ);
+	let now = time::now(time::clock::MONOTONIC);
 	let peer: (ip::addr, u16) = tcp::peeraddr(fd) as (ip::addr, u16);
 	let wsc: *wsconn = alloc(wsconn {
 		fd = fd,
-		client_addr = peer.0,
-		client_port = peer.1,
+		client = peer,
 		bufstream = bufio::init(fd, rbuf, wbuf),
-		path = "",
-		headers = alloc([], 5),
-		ws_key = [],
 		rbuf = rbuf,
 		wbuf = wbuf,
-		timestamp_last_frame = time::now(time::clock::MONOTONIC),
+		path = "",
+		headers = alloc([], 5),
+		timestamp = now,
+		timestamp_last_pong = now,
+		handshake_done = false,
+		waiting_for_pong = false,
 		on_message = on_message,
 	});
-
-	match (handshake(wsc)) {
-	case void => return wsc;
-	case let e: io::error => {
-		fmt::printfln("Handshake with {}:{} failed (fd={}): {}",
-			ip::string(wsc.client_addr), wsc.client_port,
-			wsc.fd: u32, io::strerror(e))!;
-	};
-	case => {
-		fmt::printfln("Handshake with {}:{} failed (fd={}): invalid request",
-			ip::string(wsc.client_addr), wsc.client_port, wsc.fd: u32)!;
-	};
-	};
-	finish(wsc);
-	return null;
+	return wsc;
 };
 
-// This function will block sometimes. It might be better to split it, so that
+// This function might block sometimes. It might be better to split it, so that
 // the poll loop is used for everything that could block.
 // Also, it could panic/abort where it should not.
 fn recieve_frame(wsc: *wsconn, pollfd: *poll::pollfd)
@@ -218,38 +214,49 @@ fn recieve_frame(wsc: *wsconn, pollfd: *poll::pollfd)
 	if (!frame.fin)
 		fmt::fatal("TODO: Non-fin frame!");
 
+	wsc.timestamp = time::now(time::clock::MONOTONIC);
 	let res = switch(frame.opcode) {
 	case FRAME_CLOSE => {
 		fmt::printfln("Close-Frame recieved by client: {}:{} (fd={})",
-			ip::string(wsc.client_addr), wsc.client_port,
+			ip::string(wsc.client.0), wsc.client.1,
 			wsc.fd: u32)!;
 		send_frame(wsc, FRAME_CLOSE, [])?;
 		return io::EOF;
 	};
 	case FRAME_PING => {
 		fmt::printfln("Ping-Frame recieved by client: {}:{} (fd={})",
-			ip::string(wsc.client_addr), wsc.client_port,
+			ip::string(wsc.client.0), wsc.client.1,
 			wsc.fd: u32)!;
 		return send_frame(wsc, FRAME_PONG, []);
+	};
+	case FRAME_PONG => {
+		if (!wsc.waiting_for_pong)
+			return errors::invalid;
+
+		fmt::printfln("Pong-Frame recieved by client: {}:{} (fd={})",
+			ip::string(wsc.client.0), wsc.client.1,
+			wsc.fd: u32)!;
+		wsc.timestamp_last_pong = wsc.timestamp;
+		wsc.waiting_for_pong = false;
+		return void;
 	};
 	case FRAME_TEXT => yield {
 		let res = strings::fromutf8(frame.payload);
 		let valid = res is str;
 		fmt::printfln("Text-Frame recieved by client: {}:{} (fd={}, len={}, valid={})",
-			ip::string(wsc.client_addr), wsc.client_port,
+			ip::string(wsc.client.0), wsc.client.1,
 			wsc.fd: u32, len(frame.payload), valid)!;
 		yield if (valid) wsc.on_message(wsc, res as str) else void;
 	};
 	case FRAME_BINARY => yield {
 		fmt::printfln("Binary-Frame recieved by client: {}:{} (fd={}, len={})",
-			ip::string(wsc.client_addr), wsc.client_port,
+			ip::string(wsc.client.0), wsc.client.1,
 			wsc.fd: u32, len(frame.payload))!;
 		yield wsc.on_message(wsc, frame.payload);
 	};
 	case => return errors::invalid;
 	};
 
-	wsc.timestamp_last_frame = time::now(time::clock::MONOTONIC);
 	match (res) {
 	case void => yield;
 	case let bytes: []u8 => {
@@ -266,9 +273,10 @@ fn recieve_frame(wsc: *wsconn, pollfd: *poll::pollfd)
 	return void;
 };
 
+// There are potentially-blocking writes in here!
 fn send_frame(wsc: *wsconn, opcode: u8, payload: const []u8) (void | io::error | io::EOF) = {
 	fmt::printfln("Sending frame to {}:{} (fd={}, opcode={}, len={})",
-		ip::string(wsc.client_addr), wsc.client_port,
+		ip::string(wsc.client.0), wsc.client.1,
 		wsc.fd: u32, opcode, len(payload))!;
 	let buf: [4]u8 = [0...];
 	let buf: []u8 = buf[0..0];
@@ -288,26 +296,55 @@ fn send_frame(wsc: *wsconn, opcode: u8, payload: const []u8) (void | io::error |
 	return void;
 };
 
+// If there was no communication for TIMEOUT_PING, send a ping frame,
+// and disconnect the client if it does not respond withing TIMEOUT_PONG.
+fn check_alive(wsc: *wsconn, now: time::instant) bool = {
+	let diff = time::diff(wsc.timestamp, now);
+	if (diff < TIMEOUT_PING)
+		return true;
+
+	if (wsc.waiting_for_pong) {
+		let diff = time::diff(wsc.timestamp_last_pong, now);
+		return diff < TIMEOUT_PONG;
+	};
+
+	match (send_frame(wsc, FRAME_PING, [])) {
+	case void => yield;
+	case => return false;
+	};
+	wsc.waiting_for_pong = true;
+	return true;
+};
+
 fn finish(wsc: *wsconn) void = {
 	let ignore = bufio::flush(&wsc.bufstream);
 	for (let i: size = 0; i < len(wsc.headers); i += 1) free(wsc.headers[i].0);
 	free(wsc.path);
 	free(wsc.headers);
-	free(wsc.ws_key);
 	free(wsc.rbuf);
 	free(wsc.wbuf);
 	let ignore = net::close(wsc.fd);
 	free(wsc);
 };
 
-let connections: []nullable *wsconn = [];
+// pollfds[0] is the listener socket.
+let pollfds: []poll::pollfd = [];
+let connections: []*wsconn = [];
 
+fn finish_and_remove(i: size, wsc: *wsconn) void = {
+	finish(wsc);
+	delete(pollfds[i]);
+	assert(connections[i - 1] == wsc);
+	delete(connections[i - 1]);
+};
+
+// Currently unused, can be used to create a echo server.
 fn echo(wsc: *wsconn, msg: ([]u8 | str)) (void | []u8 | str) = {
 	// For now, just echo:
 	return match (msg) {
 	case let text: str => yield {
 		fmt::printfln("Echoing to {}:{} (fd={}, len={})",
-			ip::string(wsc.client_addr), wsc.client_port,
+			ip::string(wsc.client.0), wsc.client.1,
 			wsc.fd: u32, len(text))!;
 		yield strings::dup(text);
 	};
@@ -315,23 +352,24 @@ fn echo(wsc: *wsconn, msg: ([]u8 | str)) (void | []u8 | str) = {
 	};
 };
 
+// broadcast a message on every connection.
 fn broadcast(wsc: *wsconn, msg: ([]u8 | str)) (void | []u8 | str) = {
 	if (!(msg is str)) return strings::dup("please send text, not binary data.");
 	for (let i: size = 0; i < len(connections); i += 1) {
-		if (connections[i] is null)
+		let wsc = connections[i];
+		if (!wsc.handshake_done)
 			continue;
 
-		let wsc = connections[i] as *wsconn;
 		match (send_frame(wsc, FRAME_TEXT, strings::toutf8(msg as str))) {
 		case void => yield;
 		case let err : io::error => {
 			fmt::printfln("Failed to send frame to {}:{} (fd={}): {}",
-				ip::string(wsc.client_addr), wsc.client_port,
+				ip::string(wsc.client.0), wsc.client.1,
 				wsc.fd: u32, io::strerror(err))!;
 		};
 		case io::EOF => {
 			fmt::printfln("Failed to send frame to {}:{} (fd={}): EOF",
-				ip::string(wsc.client_addr), wsc.client_port, wsc.fd: u32)!;
+				ip::string(wsc.client.0), wsc.client.1, wsc.fd: u32)!;
 		};
 		};
 	};
@@ -339,32 +377,36 @@ fn broadcast(wsc: *wsconn, msg: ([]u8 | str)) (void | []u8 | str) = {
 };
 
 export fn main() void = {
-
-	let on_message = &broadcast;
-
+	const on_message = &broadcast;
 	const host: (ip::addr4, u16) = (ip::LOCAL_V4, 12345);
+
 	const listener = match (tcp::listen(host.0, host.1, tcp::reuseaddr)) {
 	case let err: net::error => fmt::fatalf("Cannot listen on {}:{}: {}",
 			ip::string(host.0), host.1, net::strerror(err));
 	case let s: net::socket => yield s;
 	};
-	let pollfds: []poll::pollfd = alloc([
-		// pollfds[0] is the listener socket.
-		poll::pollfd {
-			fd = listener,
-			events = (poll::event::POLLIN | poll::event::POLLPRI),
-			revents = 0,
-		}
-	], 16);
+
+	// pollfds[0] is the listener socket.
+	append(pollfds, poll::pollfd {
+		fd = listener,
+		events = (poll::event::POLLIN | poll::event::POLLPRI),
+		revents = 0,
+	});
+
 	fmt::printfln("Server listening on {}:{}...", ip::string(host.0), host.1)!;
+	let any_waiting_on_pong: bool = false;
 	for (true) {
-		poll::poll(pollfds, poll::INDEF)!;
+		// Wait for events.
+		poll::poll(pollfds, if (any_waiting_on_pong) TIMEOUT_PONG else TIMEOUT_PING)!;
+		let now = time::now(time::clock::MONOTONIC);
+
 		if (pollfds[0].revents == poll::event::POLLIN) {
 			// Handle a new connection.
 			let fd: net::socket = net::accept(listener)!;
 			let peer: (ip::addr, u16) = tcp::peeraddr(fd) as (ip::addr, u16);
-			fmt::printfln("New connection from {}:{} (fd={}, slot={})",
-				ip::string(peer.0), peer.1, fd: u32, len(pollfds))!;
+			fmt::printfln("New connection from {}:{} (fd={}, slot={}, total={})",
+				ip::string(peer.0), peer.1, fd: u32, len(pollfds),
+				len(connections) + 1)!;
 			// Register the fd for the next poll call, and create a initially
 			// empty slot in the wscs slice. After the first data was recieved,
 			// a wsconn will be created later.
@@ -373,7 +415,7 @@ export fn main() void = {
 				events = (poll::event::POLLIN | poll::event::POLLPRI),
 				revents = 0,
 			});
-			append(connections, null);
+			append(connections, init_connection(fd, on_message));
 		};
 
 		// Iter over open connections.
@@ -381,30 +423,30 @@ export fn main() void = {
 			// Skip over slots without connections.
 			if (pollfds[i].events == 0) continue;
 
-			// Skip if nothing happend for this FD.
-			if (pollfds[i].revents == 0) continue;
-
-			let wsc: *wsconn = match (connections[i - 1]) {
-			case null => {
-				// If this is the first package, do the
-				// handshake and prepare the connection.
-				let fd = pollfds[i].fd: net::socket;
-				let wsc = match (init_connection(fd, on_message)) {
-				case let c: *wsconn => yield c;
-				case null => {
-					delete(pollfds[i]);
-					delete(connections[i - 1]);
-					continue;
+			// Skip if nothing happend for this FD and check for
+			// timeouts.
+			let wsc: *wsconn = connections[i - 1];
+			if (pollfds[i].revents == 0) {
+				if (!check_alive(wsc, now)) {
+					fmt::printfln("Timeout of {}:{} (fd={}): closing connection",
+						ip::string(wsc.client.0), wsc.client.1, wsc.fd: u32)!;
+					finish_and_remove(i, wsc);
 				};
-				};
-
-				fmt::printfln("Successfull handshake with {}:{} (fd={})",
-					ip::string(wsc.client_addr), wsc.client_port,
-					wsc.fd: u32)!;
-				connections[i - 1] = wsc;
+				any_waiting_on_pong ||= wsc.waiting_for_pong;
 				continue;
 			};
-			case let wsc: *wsconn => yield wsc;
+
+			if (!wsc.handshake_done) {
+				let strerr: str = match (handshake(wsc)) {
+				case void => continue;
+				case let e: io::error => yield io::strerror(e);
+				case => yield "invalid request";
+				};
+				finish_and_remove(i, wsc);
+				fmt::printfln("Handshake with {}:{} failed (fd={}): {}",
+					ip::string(wsc.client.0), wsc.client.1,
+					wsc.fd: u32, strerr)!;
+				continue;
 			};
 
 			// Handle a frame.
@@ -412,19 +454,15 @@ export fn main() void = {
 			case void => yield;
 			case let err: io::error => {
 				fmt::printfln("Disconnecting client {}:{} (fd={}): error: {}",
-					ip::string(wsc.client_addr), wsc.client_port,
+					ip::string(wsc.client.0), wsc.client.1,
 					wsc.fd: u32, io::strerror(err))!;
-				finish(wsc);
-				delete(pollfds[i]);
-				delete(connections[i - 1]);
+				finish_and_remove(i, wsc);
 			};
 			case io::EOF => {
 				fmt::printfln("Disconnecting client {}:{} (fd={}): EOF",
-					ip::string(wsc.client_addr), wsc.client_port,
+					ip::string(wsc.client.0), wsc.client.1,
 					wsc.fd: u32)!;
-				finish(wsc);
-				delete(pollfds[i]);
-				delete(connections[i - 1]);
+				finish_and_remove(i, wsc);
 			};
 			};
 		};
