@@ -282,6 +282,10 @@ static int libselfpatch_restore_permissions() {
 	return 0;
 }
 
+/* The following three functions were taken from:
+ * https://www.cs.princeton.edu/courses/archive/spr09/cos333/beautiful.html
+ */
+static int match(const char *regexp, const char *text);
 static int matchhere(const char *regexp, const char *text);
 static int matchstar(int c, const char *regexp, const char *text);
 
