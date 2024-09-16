@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Game Of Living</title>
+  <style>
+    html, body {
+      background-color: #444;
+      margin: 5px;
+      padding: 0px;
+      color: white;
+      font-family: monospace;
+    }
+
+    td {
+      margin: 0px;
+      padding: 5px;
+      border: none;
+    }
+
+    td.dead {
+      background-color: #000
+    }
+
+    td.alive {
+      background-color: #fff
+    }
+  </style>
+</head>
+<body>
+  <table id="table">
+    
+  </table>
+  <script>
+    const ROWS = Math.ceil((window.innerHeight - 15) / 15),
+          COLS = Math.ceil((window.innerWidth - 15) / 15);
+
+    // const TARGET_FPS = 10;
+    const CELL_DEAD = 0, CELL_ALIVE = 1;
+    const INITIAL_CELL_ALIVE_RATIO = 0.15;
+
+    const cells = new Array(ROWS).fill(0).map((_, row) =>
+        new Array(COLS).fill(0).map((_, col) =>
+            ({
+              row,
+              col,
+              state: Math.random() <= INITIAL_CELL_ALIVE_RATIO ? CELL_ALIVE : CELL_DEAD,
+              html: null
+            })));
+
+    const table = document.querySelector('#table');
+    for (let row = 0; row < ROWS; row++) {
+      const rowElm = document.createElement('tr');
+      for (let col = 0; col < COLS; col++) {
+        const cellElm = document.createElement('td');
+        const cell = cells[row][col];
+        cellElm.classList.add(cell.state == CELL_ALIVE ? 'alive' : 'dead');
+        cell.html = cellElm;
+        rowElm.appendChild(cellElm);
+      }
+      table.appendChild(rowElm);
+    }
+
+    const updateAlive = cell => {
+      cell.state = CELL_ALIVE;
+      cell.html.classList.remove('dead');
+      cell.html.classList.add('alive');
+    };
+
+    const updateDead = cell => {
+      cell.state = CELL_DEAD;
+      cell.html.classList.remove('alive');
+      cell.html.classList.add('dead');
+    };
+
+    const wrap = (x, N) => x < 0 ? N + x : (x >= N ? x - N : x);
+
+    const NEIGHBOURS = [
+      { x: -2, y:  0 },
+      { x: -1, y: -1 },
+      { x:  0, y: -2 },
+      { x:  1, y: -1 },
+      { x:  2, y:  0 },
+      { x:  1, y:  1 },
+      { x:  0, y:  2 },
+      { x: -1, y:  1 },
+    ];
+    setInterval(_ => {
+      for (let i = 0; i < ROWS; i++) {
+        const row = cells[i];
+        for (let j = 0; j < COLS; j++) {
+          const cell = row[j];
+          let total_alive = 0;
+          for (let { x, y } of NEIGHBOURS)
+            if (cells[wrap(i + x, ROWS)][wrap(j + y, COLS)].state == CELL_ALIVE)
+              total_alive += 1;
+
+          if (cell.state == CELL_DEAD && total_alive == 3)
+            updateAlive(cell);
+          if (cell.state == CELL_ALIVE && (total_alive < 2 || 3 < total_alive))
+            updateDead(cell);
+        }
+      }
+    }, 1000);
+  </script>
+</body>
+</html>
