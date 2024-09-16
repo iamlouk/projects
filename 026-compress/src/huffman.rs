@@ -1,6 +1,6 @@
 /* A Huffman encoding node: It has either a value or two children, never both. */
 #[derive(Debug, PartialEq, Eq)]
-struct Node {
+pub struct Node {
     freq: usize,
     value: Option<u8>,
     children: [Option<Box<Node>>; 2],
@@ -43,7 +43,7 @@ impl Node {
             .get_encoding((prefix.0 | (1 << prefix.1), prefix.1 + 1), encodings);
     }
 
-    fn encode(&self, buf: &mut Vec<u8>) {
+    pub fn encode(&self, buf: &mut Vec<u8>) {
         if let Some(v) = self.value {
             buf.push(0x00);
             buf.push(v);
@@ -54,7 +54,7 @@ impl Node {
         self.children[1].as_ref().unwrap().encode(buf);
     }
 
-    fn decode(buf: &[u8], pos: &mut usize) -> Box<Node> {
+    pub fn decode(buf: &[u8], pos: &mut usize) -> Box<Node> {
         let c = buf[*pos];
         assert!(c == 0x00 || c == 0x01);
         if c == 0x00 {
@@ -95,7 +95,7 @@ impl Ord for Node {
  * Huffman encode/compress input where the alphabet is the individual
  * bytes. The encoding tree is calculated based on the input and also returned.
  */
-fn compress<'a>(input: &'a [u8]) -> (Box<Node>, usize, Vec<u64>) {
+pub fn compress<'a>(input: &'a [u8]) -> (Box<Node>, usize, Vec<u64>) {
     let mut byte_freqs = [0 as usize; 256];
     for c in input {
         byte_freqs[*c as usize] += 1;
@@ -159,7 +159,7 @@ fn compress<'a>(input: &'a [u8]) -> (Box<Node>, usize, Vec<u64>) {
     (nodes.pop().unwrap(), num_bits, output)
 }
 
-fn decompress<'a>(tree: &Box<Node>, num_bits: usize, input: &'a [u64]) -> Vec<u8> {
+pub fn decompress<'a>(tree: &Box<Node>, num_bits: usize, input: &'a [u64]) -> Vec<u8> {
     let mut output: Vec<u8> = Vec::new();
 
     let mut current_word_pos: usize = 0;
