@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt::{Display, Pointer};
 use std::path::PathBuf;
 use std::rc::Rc;
 use crate::common::*;
@@ -115,6 +116,128 @@ pub enum Tok {
     QuestionMark,
     Colon,
     SemiColon,
+}
+
+impl Tok {
+    pub fn is_eof(&self) -> bool { *self == Tok::EndOfFile }
+}
+
+impl Display for Tok {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Tok::*;
+        f.write_str(match self {
+            EndOfFile => return Ok(()),
+            Expand(toks) => {
+                for tok in toks.iter() {
+                    tok.fmt(f)?;
+                }
+                return Ok(())
+            },
+            Id(id) => return write!(f, "{}", &**id),
+            String(str) => return write!(f, "{:?}", &**str),
+            IntLit(x) => return write!(f, "{:x}", x),
+            RealLit(x) => return write!(f, "{}", x),
+            CharLit(x) => match *x {
+                '\n' => "'\\n'",
+                '\r' => "'\\r'",
+                '\t' => "'\\t'",
+                '\0' => "'\\0'",
+                x => return write!(f, "{:?}", x)
+            },
+            Alignas => "_Alignas",
+            Alignof => "_Alignof",
+            Auto => "auto",
+            Bool => "bool",
+            Break => "break",
+            Case => "case",
+            Char => "char",
+            Const => "const",
+            Constexpr => "constexpr",
+            Continue => "continue",
+            Default => "default",
+            Do => "do",
+            Double => "double",
+            Else => "else",
+            Enum => "enum",
+            Extern => "extern",
+            False => "false",
+            Float => "float",
+            For => "for",
+            Goto => "goto",
+            If => "if",
+            Inline => "inline",
+            Int => "int",
+            Long => "long",
+            Nullptr => "nullptr",
+            Register => "register",
+            Restrict => "restrict",
+            Return => "return",
+            Short => "short",
+            Signed => "signed",
+            Sizeof => "sizeof",
+            Static => "static",
+            StaticAssert => "_Static_assert",
+            Struct => "struct",
+            Switch => "switch",
+            ThreadLocal => "_Thread_local",
+            True => "true",
+            Typedef => "typedef",
+            Typeof => "typeof",
+            Union => "union",
+            Unsigned => "unsigned",
+            Void => "void",
+            Volatile => "volatile",
+            While => "while",
+            Attribute => "__attribute__",
+            Export => "export",
+            Fn => "fn",
+            Assign => "=",
+            AssignAdd => "+=",
+            AssignSub => "-=",
+            AssignMul => "*=",
+            AssignDiv => "/=",
+            AssignMod => "%=",
+            AssignBitAnd => "&=",
+            AssignBitOr => "|=",
+            AssignBitXOr => "^=",
+            AssignLeftShift => "<<=",
+            AssignRightShift => ">>=",
+            PlusPlus => "++",
+            MinusMinus => "--",
+            Plus => "+",
+            Minus => "-",
+            Star => "*",
+            Divide => "/",
+            Modulo => "%",
+            BitwiseNot => "~",
+            Ampersand => "&",
+            BitwiseOr => "|",
+            BitwiseXOr => "^",
+            ShiftLeft => "<<",
+            ShiftRight => ">>",
+            LogicalNot => "!",
+            LogicalAnd => "&&",
+            LogicalOr => "||",
+            Equal => "==",
+            NotEqual => "!=",
+            Smaller => "<",
+            Bigger => ">",
+            SmallerOrEqual => "<=",
+            BiggerOrEqual => ">=",
+            LParen => "(",
+            RParen => ")",
+            LBracket => "[",
+            RBracket => "]",
+            LBraces => "{",
+            RBraces => "}",
+            Arrow => "->",
+            Dot => ".",
+            Comma => ",",
+            QuestionMark => "?",
+            Colon => ":",
+            SemiColon => ";",
+        })
+    }
 }
 
 struct State {
@@ -596,6 +719,15 @@ mod test {
         toks
     }
 
+    fn preprocess(input: &str) -> String {
+        let toks = lex(input);
+        let mut buf = String::new();
+        use std::fmt::Write;
+        write!(buf, "{}", toks[0]).unwrap();
+        for tok in toks.iter().skip(1) { write!(buf, " {}", tok).unwrap(); }
+        buf
+    }
+
     #[test]
     fn basic() {
         let toks = lex("[foo]+/*comment*/(\"bar\")--42%0x1234");
@@ -612,6 +744,22 @@ mod test {
         assert_matches!(toks[8], Tok::IntLit(42));
         assert_matches!(toks[9], Tok::Modulo);
         assert_matches!(toks[10], Tok::IntLit(0x1234));
+    }
+
+    #[test]
+    fn preprocess_basic() {
+        let pp = preprocess("
+                // hello
+                static
+                #define foo 1
+                1/*blah blah blah*/2
+                foo
+                #undef foo
+                foo
+                // world
+            ");
+        println!("preprocessed: {:?}", pp);
+        assert_eq!(pp.as_str(), "static 1 2 1 foo");
     }
 
     #[test]
