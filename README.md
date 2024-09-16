@@ -227,4 +227,6 @@ Working B-Tree with variable key and value sizes, but currently without persiste
 - A super super simple linker? (for ELF, but with only the most basic features possible?)
 - A simplified make clone?
 - A simple markdown->HTML transpiler?
+- Something like [simdjson](https://github.com/simdjson/simdjson) but with AArch64 SVE?
+- Something like a compressed bitmap ([see here](https://github.com/RoaringBitmap/RoaringBitmap))?
 
