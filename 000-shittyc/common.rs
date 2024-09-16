@@ -27,7 +27,7 @@ pub enum Error {
     PreProcessor(SLoc, Tok, &'static str),
     InvalidInt(SLoc, std::num::ParseIntError),
     InvalidTok(SLoc, &'static str),
-    UnexpectedTok(SLoc, Tok, Tok, &'static str),
+    UnexpectedTok(SLoc, String),
     Lex(SLoc, String),
     ExpectedType(SLoc, Tok),
 }

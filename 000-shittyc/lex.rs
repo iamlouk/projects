@@ -700,17 +700,19 @@ impl<'lexer> Lexer<'lexer> {
         Ok(tok)
     }
 
-    pub fn expect_token(&mut self, tok: Tok) -> Result<(), Error> {
+    pub fn expect_token(&mut self, tok: Tok, msg: &'static str) -> Result<(), Error> {
         match self.next()? {
             (_, t) if t == tok => Ok(()),
-            (sloc, t) => Err(Error::UnexpectedTok(sloc, t, tok, "unexpected token")),
+            (sloc, t) => Err(Error::UnexpectedTok(sloc,
+                format!("{}: expected: {:?}, found: {:?}", msg, tok, t)))
         }
     }
 
-    pub fn expect_id(&mut self) -> Result<Rc<str>, Error> {
+    pub fn expect_id(&mut self, msg: &'static str) -> Result<(SLoc, Rc<str>), Error> {
         match self.next()? {
-            (_, Tok::Id(s)) => Ok(s),
-            (sloc, t) => Err(Error::UnexpectedTok(sloc, t, Tok::Id(Rc::from("whatever")), "expected identifier")),
+            (sloc, Tok::Id(s)) => Ok((sloc, s)),
+            (sloc, t) => Err(Error::UnexpectedTok(sloc,
+                format!("{}: expected a identifier, found: {:?}", msg, t))),
         }
     }
 
