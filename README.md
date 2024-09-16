@@ -80,4 +80,11 @@ Tags: __*C++*__, __*LLVM*__
 
 This is probably one of the best ones yet. It is a auto-vectorizer for LLVM and has it's own [README](./012-very-bad-vectorizer/README.md).
 
+### 013: [Rust Macro for Matching Enum Variants](./013-enum-match)
+
+Tags: __*Rust*__, __*Macros*__
+
+A procedural Rust macro that can be `#[derive()]`d on any enum and adds a `fn match_variants(self: &Self, other: &Self) -> bool` function. This function
+returns true if the enums are of the same variant, but they can hold different values in their fields.
+
 
