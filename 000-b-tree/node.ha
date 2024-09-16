@@ -5,8 +5,6 @@ use strings;
 
 // TODO: Add more 'const'!
 
-export def PAGE_SIZE: size = 4096;
-
 export type node_type = enum { INNER, LEAF };
 
 export type node = struct {
@@ -24,8 +22,9 @@ export fn dump_node(f: io::handle, n: node, ident: str = "") void = {
 		size_in_bytes(n))!;
 	if (n.typ == node_type::INNER) {
 		for (let i: size = 0; i < n.num_keys; i += 1) {
-			fmt::fprintfln(f, "{} - key='{}' -> off={}", ident,
-				strings::fromutf8(get_key(n, i))!, get_off(n, i))!;
+			fmt::fprintfln(f, "{} - off={}", ident, get_off(n, i))!;
+			fmt::fprintfln(f, "{} - key='{}'", ident,
+				strings::fromutf8(get_key(n, i))!)!;
 		};
 		fmt::fprintfln(f, "{} - off={}", ident, get_off(n, n.num_keys))!;
 	} else {
