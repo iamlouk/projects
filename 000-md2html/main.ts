@@ -2,6 +2,8 @@ import * as code from "../039-syntax-highlight/main.ts"
 
 const isWhitespace = (c: string) => /^\s+$/.test(c);
 
+const countLeadingWhitespace = (s: string): number => s.length - s.trimStart().length
+
 function parseLink(text: string, html: string[]): number {
   console.assert(text.charAt(0) == '[');
   const rbracket = text.indexOf('](');
@@ -134,6 +136,44 @@ function parseCodeBlock(i: number, lines: string[], html: string[]): number {
   return i;
 }
 
+function parseList(i: number, lines: string[], html: string[]): number {
+  if (!lines[i].startsWith('- '))
+    return 0;
+
+  const parseSubList = (prevident: number): boolean => {
+    const ident = countLeadingWhitespace(lines[i]);
+    const line = lines[i].trimStart();
+    if (ident < prevident || !line.startsWith('- '))
+      return false;
+    if (ident > prevident)
+      html.push('\n<ul>\n');
+    html.push(`<li>`);
+
+    parseInline(line.substring(2), html);
+    i += 1;
+    while (true) {
+      const nident = countLeadingWhitespace(lines[i]);
+      const line = lines[i].trimStart();
+      if (nident != ident + 2 || line.startsWith('- '))
+        break;
+
+      html.push(` `);
+      parseInline(line, html);
+      i += 1;
+    }
+
+    parseSubList(ident + 1);
+    html.push(`</li>\n`);
+    parseSubList(ident);
+    if (ident > prevident)
+      html.push('</ul>\n');
+    return true;
+  };
+
+  parseSubList(-1);
+  return i;
+}
+
 export function toHTML(text: string): string {
   const lines = text.split('\n');
   const html: string[] = [];
@@ -147,6 +187,11 @@ export function toHTML(text: string): string {
       continue;
 
     if ((j = parseCodeBlock(i, lines, html)) != 0) {
+      i = j;
+      continue;
+    }
+
+    if ((j = parseList(i, lines, html)) != 0) {
       i = j;
       continue;
     }

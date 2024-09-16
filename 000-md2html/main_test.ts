@@ -24,3 +24,23 @@ Deno.test(function code() {
     toHTML("hello\n```\nfoo\n```\nworld"),
     `hello\n<div class="highlight" data-lang=""><div><b class="ln">1</b></div>\n<div><pre>\n<b class="id">foo</b>\n</pre></div></div>\n\nworld`);
 });
+
+Deno.test(function list() {
+  assertEquals(
+    toHTML(`
+# A list...
+
+- foo
+- bar
+  - one
+  - two
+    - three
+    - four
+  - five
+- hello
+  world
+  - six
+
+`),
+    ``);
+});
