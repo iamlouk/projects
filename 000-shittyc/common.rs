@@ -27,29 +27,76 @@ pub enum Error {
     PreProcessor(SLoc, Tok, &'static str),
     InvalidInt(SLoc, std::num::ParseIntError),
     InvalidTok(SLoc, &'static str),
-    Lex(SLoc, String)
+    UnexpectedTok(SLoc, Tok, Tok, &'static str),
+    Lex(SLoc, String),
+    ExpectedType(SLoc, Tok),
 }
 
+#[allow(dead_code)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum Type {
+    Unknown,
     Void,
-    Int64,
-    Ptr(Rc<Type>),
-    Fn(Rc<Type>, Vec<Rc<Type>>)
+    Int { bits: usize, signed: bool },
+    Ptr { ety: Rc<Type>, volatile: bool, constant: bool, restrict: bool },
+    Array(Rc<Type>, Option<usize>),
+    Struct { name: Option<Rc<str>>, fields: Rc<Vec<(Rc<str>, Type)>> },
+    Union { name: Option<Rc<str>>, fields: Rc<Vec<(Rc<str>, Type)>> },
+    Enum { name: Option<Rc<str>>, ety: Rc<Type>, vals: Rc<Vec<(Rc<str>, u64)>> },
+    Fn { retty: Rc<Type>, argtys: Rc<Vec<Type>> },
 }
 
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Type::Unknown => write!(f, "???"),
             Type::Void => write!(f, "void"),
-            Type::Int64 => write!(f, "uint64"),
-            Type::Ptr(elm) => write!(f, "*{}", &**elm),
-            Type::Fn(retty, argtys) => {
-                write!(f, "fn(")?;
-                for (i, ty) in argtys.iter().enumerate() {
-                    write!(f, "{}{}", if i == 0 { "" } else { ", " }, &**ty)?;
-                }
-                write!(f, "): {}", &**retty)?;
+            Type::Int { bits, signed } => write!(f, "{}int{}_t",
+                if *signed { "" } else { "u" }, bits),
+            Type::Ptr { ety, volatile, constant, restrict } => {
+                // TODO: Check if ety is a function or array, and change
+                // repr. in that case.
+                write!(f, "{}{}{}{}*", &**ety,
+                    if *volatile {" volatile"} else {""},
+                    if *constant {" constant"} else {""},
+                    if *restrict {" restrict"} else {""})?;
                 Ok(())
+            }
+            Type::Array(ety, Some(nelms)) => write!(f, "{}[{}]", &**ety, nelms),
+            Type::Array(ety, None) => write!(f, "{}[]", &**ety),
+            Type::Struct { name, fields: _ } if name.is_some()
+                => write!(f, "struct {}", name.clone().unwrap()),
+            Type::Struct { name: _, fields } => {
+                write!(f, "struct {{")?;
+                for (name, typ) in fields.iter() {
+                    write!(f, " {} {};", typ, name)?;
+                }
+                write!(f, " }}")
+            },
+            Type::Union { name, fields: _ } if name.is_some()
+                => write!(f, "union {}", name.clone().unwrap()),
+            Type::Union { name: _, fields } => {
+                write!(f, "union {{")?;
+                for (name, typ) in fields.iter() {
+                    write!(f, " {} {};", typ, name)?;
+                }
+                write!(f, " }}")
+            },
+            Type::Enum { name, ety: _, vals: _ } if name.is_some()
+                => write!(f, "enum {}", name.clone().unwrap()),
+            Type::Enum { name: _, ety, vals } => {
+                write!(f, "enum: {} {{", &**ety)?;
+                for (i, (name, val)) in vals.iter().enumerate() {
+                    write!(f, "{}{} = {:x}", if i == 0 {" "} else {", "}, name, val)?;
+                }
+                write!(f, " }}")
+            },
+            Type::Fn { retty, argtys } => {
+                write!(f, "{}(*)(", &**retty)?;
+                for (i, typ) in argtys.iter().enumerate() {
+                    write!(f, "{}{}", if i == 0 {""} else {", "}, typ)?;
+                }
+                write!(f, ")")
             }
         }
     }
