@@ -5,6 +5,9 @@ Future Ideas:
 - A REDIS clone (using epoll etc), maybe in Rust?
 - A [QBE](https://c9x.me/compile/) to/from LLVM-IR or to/from GCC GIMPLE translation?
 - A small simple compiler backend: ISel, Register Allocation, ...
+- A C preprocessor
+- A B-Tree or a persistent key-value store
+- A Hare libgccjit backend using [hare::parse](https://docs.harelang.org/hare/parse) as frontend?
 
 Projects to small for their own repository or just small little things I want to try out.
 

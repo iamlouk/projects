@@ -27,14 +27,15 @@ export fn main() void = {
 			fd = listener,
 			events = (poll::event::POLLIN | poll::event::POLLPRI),
 			revents = 0
-		}
+		},
+		// All other FDs are for client connections.
+		poll::pollfd { fd = 0, events = 0, revents = 0 }
 		...
 	];
-	let free_slots: []size = [];
+	let free_slots: [MAX_CLIENTS]size = [0...];
+	let free_slots: []size = free_slots[0..0];
 	defer free(free_slots);
 	for (let i: size = 1; i < MAX_CLIENTS + 1; i += 1) {
-		// All other FDs are for client connections.
-		pollfds[i] = poll::pollfd { fd = 0, events = 0, revents = 0 };
 		append(free_slots, i);
 	};
 
@@ -85,7 +86,7 @@ export fn main() void = {
 				io::close(pollfds[i].fd)!;
 				pollfds[i] = poll::pollfd { fd = 0, events = 0, revents = 0 };
 				append(free_slots, i);
-				yield io::strerror(err);
+				continue;
 			case let n: size =>
 				let msg = match (strings::fromutf8(buf[0..n])) {
 				case let msg: str => yield msg;
