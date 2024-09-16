@@ -1,4 +1,4 @@
-.PHONY: day01 day02 day03 day04 day05 day06 day07
+.PHONY: day01 day02 day03 day04 day05 day06 day07 day08
 
 # Fortran may not be as bad as I thought and actually
 # pretty useful sometimes, but text processing is not
@@ -32,3 +32,7 @@ day06:
 day07:
 	rustc -C opt-level=1 -C debuginfo=1 ./07/camelcards.rs -o ./07/solver
 	./07/solver < ./07/input.txt
+
+day08:
+	scala3 -explain ./08/wasteland.scala < ./08/input.txt
+
