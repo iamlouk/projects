@@ -52,11 +52,11 @@ def surrounding_sum(AorB: ti.template(), i: int, j: int, ringsize: ti.template()
         # print("di:", di, ", dj:", dj, "f:", f)
 
         if x < 0:
-            x = N - x
+            x = N + x
         elif x >= N:
             x = x - N
         if y < 0:
-            y = N - y
+            y = N + y
         elif y >= N:
             y = y - N
 
