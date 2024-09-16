@@ -2,8 +2,6 @@
 
 Things I programmed on a day or two that are too small for deserving their own repository. Ideas for the future:
 
-- Bytecode-VM (accumulator based or with only few registers) that uses threaded jumps/computed gotos and compare performance to opcode-switch.
-- LLVM-IR pass (strength reduction?)
 - B*-Tree in Rust
 - ART (Adaptive Radix Tree) in Rust with path compression
 - Some generative art in JS with HTML5-Canvases
@@ -48,5 +46,13 @@ This project was more about building LLVM (14.0) and looking into the build syst
 
 ### 007: [Bytecode-VM comparing threaded jumps and a jump table](./007-mini-vm)
 
+Tags: __*C*__, __*performance*__
+
 Somehow, [the iSH iOS app](https://github.com/ish-app/ish) manages to have a quite good emulator (still quite slow) on a platform where code generation is impossible because of the restrictions iOS enforces on paging. I knew of computed `goto`s, but have never used them before. This is my take on a bytecode VM that uses the threaded dispatch technique used in _iSH_, but without the assembly. Using that technique indeed increases performance by up to 2x for my simple testcase.
+
+### 008: [LLVM IR Pass](./008-llvm-ir-pass)
+
+Tags: __*C++*__, __*LLVM*__, __*Compiler*__
+
+A super basic strength reduction as an LLVM pass. Similar setup as with project #6, but this time there is a `run.sh` script as well.
 
