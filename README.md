@@ -62,4 +62,9 @@ Tags: __*Rust*__, __*Lexer*__, __*Parser*__
 
 This will be a multi-day project. The first step was a lexer and a simple parser for the most basic expressions.
 
+### 010: [CAs in taichi-python](./010-taichi-ca)
+
+Tags: __*CAs*__, __*Python*__, __*GPUs*__
+
+I accidentally stumbled across [Taichi Lang](https://github.com/taichi-dev/taichi/) and was fascinated by it. As someone interested in compilers and GPU programming, the way this project works is really cool. It uses python's reflection/inspection/meta-programming in order to embed itself as a DSL into regular python code and JITs kernels. The way it works becomes clearer and clearer the more you read up on the limitations and design choices of the language. If it had proper reduction support it could be very very useful for a lot of things I did in C before. In order to play around with it I wrote a small cellular automata.
 
