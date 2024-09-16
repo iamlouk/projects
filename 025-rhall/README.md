@@ -2,6 +2,7 @@ Hey, the type-checker is fixed! __But there are memory-leaks!__ The problem is t
 
 ### TODOs
 
+- `match`/`case` expressions for new union types, options, any, ...
 - Perf. improvements around scopes and lambdas (closures to be precise)
 - Fix memory leaks (GC for closures?)
 - Generic lists? Other generic stuff?

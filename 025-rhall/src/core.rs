@@ -48,7 +48,7 @@ pub enum Type {
     Placeholder(Rc<str>),
     Bool,
     Int,
-    Str,
+    Text,
     Any,
     TypeOfType,
     TypeOf(Rc<Type>),
@@ -63,7 +63,7 @@ impl Display for Type {
             Type::Placeholder(name) => write!(f, "{}", name.as_ref()),
             Type::Bool => write!(f, "Bool"),
             Type::Int => write!(f, "Int"),
-            Type::Str => write!(f, "Str"),
+            Type::Text => write!(f, "Text"),
             Type::Any => write!(f, "Any"),
             Type::TypeOfType => write!(f, "Type"),
             Type::TypeOf(t) => write!(f, "typeof({})", t.as_ref()),
@@ -103,7 +103,8 @@ impl PartialEq for Type {
             (Type::Placeholder(tp1), Type::Placeholder(tp2)) => tp1.as_ref() == tp2.as_ref(),
             (Type::Bool, Type::Bool) => true,
             (Type::Int, Type::Int) => true,
-            (Type::Str, Type::Str) => true,
+            (Type::Text, Type::Text) => true,
+            (Type::Any, Type::Any) => true,
             (Type::TypeOfType, Type::TypeOfType) => true,
             (Type::TypeOf(t1), Type::TypeOf(t2)) => t1.as_ref() == t2.as_ref(),
             (Type::Lambda(args1, rettyp1), Type::Lambda(args2, rettyp2)) => {
@@ -137,7 +138,7 @@ impl Type {
             Type::Placeholder(_) => self.clone(),
             Type::Bool => self.clone(),
             Type::Int => self.clone(),
-            Type::Str => self.clone(),
+            Type::Text => self.clone(),
             Type::Any => self.clone(),
             Type::TypeOfType => self.clone(),
             Type::TypeOf(t) => Rc::new(Type::TypeOf(t.subst(name, subst))),
@@ -191,7 +192,7 @@ pub enum Value {
     Pseudo(Rc<Type>),
     Bool(bool),
     Int(i64),
-    Str(Rc<str>),
+    Text(Rc<str>),
     Type(Rc<Type>),
     // TODO: This will cause cyclic Rc<...> references: The lambda is in the
     // scope for this lambda. This is unavoidable for recursive functions.
@@ -200,7 +201,7 @@ pub enum Value {
     Builtin(Rc<Builtin>),
     Option(Rc<Type>, Option<Box<Value>>),
     Record(Vec<(Rc<str>, Value)>),
-    Any(Rc<Type>, Box<Value>),
+    Any(Box<Value>),
 }
 
 pub struct Builtin {
@@ -233,7 +234,7 @@ impl Value {
             Value::Pseudo(t) => t.clone(),
             Value::Bool(_) => Rc::new(Type::Bool),
             Value::Int(_) => Rc::new(Type::Int),
-            Value::Str(_) => Rc::new(Type::Str),
+            Value::Text(_) => Rc::new(Type::Text),
             Value::Type(t) => {
                 if **t == Type::TypeOfType {
                     Rc::new(Type::TypeOfType)
@@ -253,7 +254,7 @@ impl Value {
                     .map(|(name, val)| (name.clone(), val.get_type()))
                     .collect(),
             )),
-            Value::Any(_, _) => Rc::new(Type::Any),
+            Value::Any(_) => Rc::new(Type::Any),
         }
     }
 
@@ -289,7 +290,7 @@ impl Display for Value {
             Value::Bool(true) => write!(f, "true"),
             Value::Bool(false) => write!(f, "false"),
             Value::Int(x) => write!(f, "{}", x),
-            Value::Str(s) => write!(f, "{:?}", s.as_ref()),
+            Value::Text(s) => write!(f, "{:?}", s.as_ref()),
             Value::Type(t) => Display::fmt(t.as_ref(), f),
             Value::Lambda(lambda) => {
                 write!(f, "λ(")?;
@@ -313,9 +314,7 @@ impl Display for Value {
                 }
                 write!(f, " }}")
             }
-            Value::Any(truetype, boxedvalue) => {
-                write!(f, "(({} : {}) as Any)", boxedvalue, truetype)
-            }
+            Value::Any(v) => write!(f, "({} as Any)", v)
         }
     }
 }
