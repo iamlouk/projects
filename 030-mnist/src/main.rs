@@ -7,54 +7,59 @@
 
 const BATCHSIZE: usize = 15;
 
-trait Layer<const N_IN: usize, const M_IN: usize, const DEPTH_IN: usize> {
-    const N_OUT: usize;
-    const M_OUT: usize;
-    const DEPTH_OUT: usize;
+trait Layer<
+    const N_IN: usize,
+    const M_IN: usize,
+    const CHANNELS_IN: usize,
+    const N_OUT: usize,
+    const M_OUT: usize,
+    const CHANNELS_OUT: usize,
+>
+{
+    fn new(rng: &mut rand::prelude::ThreadRng) -> Self;
 
     fn forward(
         &mut self,
-        input: std::rc::Rc<[[[[f32; N_IN]; M_IN]; DEPTH_IN]; BATCHSIZE]>,
-    ) -> std::rc::Rc<[[[[f32; Self::N_OUT]; Self::M_OUT]; Self::DEPTH_OUT]; BATCHSIZE]>;
+        input: std::rc::Rc<[[[[f32; N_IN]; M_IN]; CHANNELS_IN]; BATCHSIZE]>,
+    ) -> std::rc::Rc<[[[[f32; N_OUT]; M_OUT]; CHANNELS_OUT]; BATCHSIZE]>;
 
     fn backward(
         &mut self,
-        errors: std::rc::Rc<[[[[f32; Self::N_OUT]; Self::M_OUT]; Self::DEPTH_OUT]; BATCHSIZE]>,
-    ) -> std::rc::Rc<[[[[f32; N_IN]; M_IN]; DEPTH_IN]; BATCHSIZE]>;
+        errors: std::rc::Rc<[[[[f32; N_OUT]; M_OUT]; CHANNELS_OUT]; BATCHSIZE]>,
+    ) -> std::rc::Rc<[[[[f32; N_IN]; M_IN]; CHANNELS_IN]; BATCHSIZE]>;
 
     /* Workaround for limitations in Rust's generic trait stuff. */
     fn transmute_in2out(
-        tensor: std::rc::Rc<[[[[f32; N_IN]; M_IN]; DEPTH_IN]; BATCHSIZE]>,
-    ) -> std::rc::Rc<[[[[f32; Self::N_OUT]; Self::M_OUT]; Self::DEPTH_OUT]; BATCHSIZE]> {
-        debug_assert!(N_IN * M_IN * DEPTH_IN == Self::N_OUT * Self::M_OUT * Self::DEPTH_OUT);
+        tensor: std::rc::Rc<[[[[f32; N_IN]; M_IN]; CHANNELS_IN]; BATCHSIZE]>,
+    ) -> std::rc::Rc<[[[[f32; N_OUT]; M_OUT]; CHANNELS_OUT]; BATCHSIZE]> {
+        debug_assert!(N_IN * M_IN * CHANNELS_IN == N_OUT * M_OUT * CHANNELS_OUT);
         let (ptr, alloc) = std::rc::Rc::into_raw_with_allocator(tensor);
         unsafe {
-            let ptr = ptr as *mut [[[[f32; Self::N_OUT]; Self::M_OUT]; Self::DEPTH_OUT]; BATCHSIZE];
+            let ptr = ptr as *mut [[[[f32; N_OUT]; M_OUT]; CHANNELS_OUT]; BATCHSIZE];
             std::rc::Rc::from_raw_in(ptr, alloc)
         }
     }
 
     /* Workaround for limitations in Rust's generic trait stuff. */
     fn transmute_out2in(
-        tensor: std::rc::Rc<[[[[f32; Self::N_OUT]; Self::M_OUT]; Self::DEPTH_OUT]; BATCHSIZE]>,
-    ) -> std::rc::Rc<[[[[f32; N_IN]; M_IN]; DEPTH_IN]; BATCHSIZE]> {
-        debug_assert!(N_IN * M_IN * DEPTH_IN == Self::N_OUT * Self::M_OUT * Self::DEPTH_OUT);
+        tensor: std::rc::Rc<[[[[f32; N_OUT]; M_OUT]; CHANNELS_OUT]; BATCHSIZE]>,
+    ) -> std::rc::Rc<[[[[f32; N_IN]; M_IN]; CHANNELS_IN]; BATCHSIZE]> {
+        debug_assert!(N_IN * M_IN * CHANNELS_IN == N_OUT * M_OUT * CHANNELS_OUT);
         let (ptr, alloc) = std::rc::Rc::into_raw_with_allocator(tensor);
         unsafe {
-            let ptr = ptr as *mut [[[[f32; N_IN]; M_IN]; DEPTH_IN]; BATCHSIZE];
+            let ptr = ptr as *mut [[[[f32; N_IN]; M_IN]; CHANNELS_IN]; BATCHSIZE];
             std::rc::Rc::from_raw_in(ptr, alloc)
         }
     }
 
     /* Alloc input sized tensor */
-    fn alloc_input_tensor() -> std::rc::Rc<[[[[f32; N_IN]; M_IN]; DEPTH_IN]; BATCHSIZE]> {
-        std::rc::Rc::new([[[[0.0f32; N_IN]; M_IN]; DEPTH_IN]; BATCHSIZE])
+    fn alloc_input_tensor() -> std::rc::Rc<[[[[f32; N_IN]; M_IN]; CHANNELS_IN]; BATCHSIZE]> {
+        std::rc::Rc::new([[[[0.0f32; N_IN]; M_IN]; CHANNELS_IN]; BATCHSIZE])
     }
 
     /* Alloc output sized tensor */
-    fn alloc_output_tensor(
-    ) -> std::rc::Rc<[[[[f32; Self::N_OUT]; Self::M_OUT]; Self::DEPTH_OUT]; BATCHSIZE]> {
-        std::rc::Rc::new([[[[0.0f32; Self::N_OUT]; Self::M_OUT]; Self::DEPTH_OUT]; BATCHSIZE])
+    fn alloc_output_tensor() -> std::rc::Rc<[[[[f32; N_OUT]; M_OUT]; CHANNELS_OUT]; BATCHSIZE]> {
+        std::rc::Rc::new([[[[0.0f32; N_OUT]; M_OUT]; CHANNELS_OUT]; BATCHSIZE])
     }
 }
 
@@ -105,7 +110,7 @@ fn load_training_data(
     shuffle_seed: u64,
 ) -> Result<
     (
-        Vec<Box<[[[[f32; 28]; 28]; 1]; BATCHSIZE]>>,
+        Vec<std::rc::Rc<[[[[f32; 28]; 28]; 1]; BATCHSIZE]>>,
         Vec<[i8; BATCHSIZE]>,
     ),
     String,
@@ -155,7 +160,8 @@ fn load_training_data(
     let mut rng = StdRng::seed_from_u64(shuffle_seed);
     images.shuffle(&mut rng);
     let n = images.len();
-    let mut inputs: Vec<Box<[[[[f32; 28]; 28]; 1]; BATCHSIZE]>> = Vec::with_capacity(n / BATCHSIZE);
+    let mut inputs: Vec<std::rc::Rc<[[[[f32; 28]; 28]; 1]; BATCHSIZE]>> =
+        Vec::with_capacity(n / BATCHSIZE);
     let mut classes: Vec<[i8; BATCHSIZE]> = Vec::with_capacity(n / BATCHSIZE);
 
     for chunk in images.into_iter().array_chunks::<BATCHSIZE>() {
@@ -166,7 +172,7 @@ fn load_training_data(
         }
         classes.push(batch);
 
-        inputs.push(Box::new(chunk.map(|(_, image)| [*image])));
+        inputs.push(std::rc::Rc::new(chunk.map(|(_, image)| [*image])));
     }
 
     let dt = std::time::Instant::now() - t0;

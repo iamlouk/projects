@@ -54,7 +54,7 @@ Tags: __*C++*__, __*LLVM*__, __*Compiler*__
 
 Similar setup as with project #6, but this time there is a `run.sh` script as well. The pass plugin contains two passes: one is a very simple strength reduction (`x / y -> x >> log2(y)` if `y` is a power of two), the other is actually a de-optimization implemented for fun/practice not actually useful. When it sees the integer formula `y = (x*(x+1))/2` it replaces that by a loop that sums up all numbers from zero to `x` ([known as gaussian summation](https://de.wikipedia.org/wiki/Gau%C3%9Fsche_Summenformel)). LLVM is actually able to reverse that optimization again!
 
-### 009: [Lexer and parser for binary operations](./009-interpreter)
+### 009: [Lexer and parser for binary operations](./009-interpreter) *(unfinished/abandoned, see rhall instead)*
 
 Tags: __*Rust*__, __*Lexer*__, __*Parser*__
 
@@ -66,7 +66,7 @@ Tags: __*CAs*__, __*Python*__, __*GPUs*__
 
 I accidentally stumbled across [Taichi Lang](https://github.com/taichi-dev/taichi/) and was fascinated by it. As someone interested in compilers and GPU programming, the way this project works is really cool. It uses python's reflection/inspection/meta-programming in order to embed itself as a DSL into regular python code and JITs kernels. The way it works becomes clearer and clearer the more you read up on the limitations and design choices of the language. If it had proper reduction support it could be very very useful for a lot of things I did in C before. In order to play around with it I wrote a small cellular automata.
 
-### 011: [Jump'n'Run](./011-jump-n-run) *(unfinished)*
+### 011: [Jump'n'Run](./011-jump-n-run) *(unfinished/abandoned)*
 
 Tags: __*HTML*__, __*JS*__, __*Game*__
 
@@ -173,5 +173,13 @@ A `@jit` Python decorator that causes the given function to become a DSL and be 
 
 ### 029: [Game Of Living](./029-gol)
 
+Tags: __*CAs*__, __*Rust*__
+
 A [cellular automata inspired by this](https://www.youtube.com/watch?v=WMJ1H3Ai-qs). I played a lot with CAs a few years ago, and wanted to try out some new rules here.
+
+### 030: [MNIST Classifier](./030-mnist/) *(unfinished)*
+
+Tags: __*MNIST*__, __*DL*__
+
+A neural network from scratch in Rust. This might get abandoned pretty soon, it is very far from being done.
 
