@@ -2,7 +2,9 @@
 a.out
 *.o
 test
+
 /*/target
 /*/build
 
+/007-mini-vm/minivm
 
