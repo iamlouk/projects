@@ -1,4 +1,5 @@
 #![feature(assert_matches)]
+#![allow(clippy::type_complexity)]
 
 use std::io::Read;
 
@@ -23,7 +24,7 @@ fn main() {
     let mut parser = Parser::new(&mut lexer);
     let mut node = parser.parse_all().expect("parsing failure");
     println!("# AST: {}", node.as_ref());
-    println!("# TYP: {}", node.typecheck(&mut env).expect("typecheck failure"));
+    println!("# TYP: {}", node.typecheck(&mut env, None).expect("typecheck failure"));
 
     match env.eval(node.as_ref()) {
         Ok(val) => println!("{}", val),
@@ -57,12 +58,9 @@ mod test {
 
             let mut lexer = Lexer::new(sourcecode.as_str(), 0, &mut env.string_pool);
             let mut parser = Parser::new(&mut lexer);
-            let example = parser.parse_all().expect("parsing failed");
+            let mut example = parser.parse_all().expect("parsing failed");
 
-            // TODO: Implement type-inference for recursive named lambdas or
-            //       add syntax for hinting the return type of a lambda.
-            // TODO: Or both...
-            // example.borrow_mut().typecheck(&mut env).expect("type check failed");
+            example.typecheck(&mut env, None).expect("type check failed");
 
             let res = format!("{}", env.eval(&example).expect("evaluation failed"));
             assert_eq!(expected.trim(), res.trim());

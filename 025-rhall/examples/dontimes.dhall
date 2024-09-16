@@ -1,4 +1,4 @@
-let dontimes = λ(f: ∀(x: Int) -> Int, x: Int, n: Int) ->
+let dontimes: ∀(f: ∀(x: Int) -> Int, x: Int, n: Int) -> Int = λ(f: ∀(x: Int) -> Int, x: Int, n: Int) ->
   if n == 0
     then x
     else f(dontimes(f, x, n - 1))

@@ -1,1 +1,1 @@
-let inc = λ(x: Int) -> x + 1 in inc(41)
+let inc: ∀(x: Int) -> Int = λ(x: Int) -> x + 1 in inc(41)
