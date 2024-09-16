@@ -112,9 +112,17 @@ Tags: __*GCC*__, __*GIMPLE*__, __*C*__
 
 This is a plugin for GCC 13 that injects two function calls into every loop: `__gcclc_loop_preheader` is called every time the preheader of a loop is executed (so once before it is entered), and `__gcclc_loop_header` is called every time the loop header is executed (so once per iteration). The user can then link a runtime library to the compiled code containing those two functions (a super simple one is provided). If `__gcclc_loop_header` returns `0`, the loop is exited, regardless of what the actual loop condition says. This is obviously completely useless, unless maybe to really annoy someone and make them question reality. The Makefile is hopefully simple enough to see how to use it.
 
-### 020: [](./020-cson)
+### 020: [CSON](./020-cson)
 
 Tags: __*C*__, __*JSON*__
 
 A simple JSON parser written in pure good-old C. I have not written plain C in a while, I already had forgotten how `fread` and so on works :D.
+
+### 021: [Rust-JSON](./021-rust-json)
+
+Tags: __*Rust*__, __*JSON*__, __*Macros*__
+
+Yet another Rust Macro/Metaprogramming experiment. This time: `#[derive(JSONifyable)]`, a derive macro (and trait) that automatically generates a `to_json` method for structs. Look at the test in `src/lib.rs` for how it is applied.
+
+
 
