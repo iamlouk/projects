@@ -2,7 +2,7 @@ use std::fmt;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::core::{Error, SLoc, Type, Value};
-use crate::eval::Env;
+use crate::eval::Runtime;
 use crate::lex::{Lexer, Tok};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -166,12 +166,16 @@ impl Node {
         };
     }
 
-    pub fn typecheck(&mut self, env: &mut Env, _hint: Option<Rc<Type>>) -> Result<Rc<Type>, Error> {
+    pub fn typecheck(
+        &mut self,
+        rt: &mut Runtime,
+        _hint: Option<Rc<Type>>,
+    ) -> Result<Rc<Type>, Error> {
         match self {
             Node::Id { typ: Some(t), .. } => Ok(t.clone()),
-            Node::Id { sloc, typ, name } => match env.lookup(name) {
+            Node::Id { sloc, typ, name } => match rt.lookup(name) {
                 Some(Value::Type(t)) if *t == Type::TypeOfType => {
-                    let t = env.type_type.clone();
+                    let t = rt.type_type.clone();
                     *typ = Some(t.clone());
                     Ok(t)
                 }
@@ -181,7 +185,7 @@ impl Node {
                     Ok(t)
                 }
                 Some(v) => {
-                    let t = v.get_type(env);
+                    let t = v.get_type();
                     *typ = Some(t.clone());
                     Ok(t)
                 }
@@ -192,19 +196,19 @@ impl Node {
             },
             Node::Integer { typ: Some(t), .. } => Ok(t.clone()),
             Node::Integer { typ, .. } => {
-                let t = env.int_type.clone();
+                let t = rt.int_type.clone();
                 *typ = Some(t.clone());
                 Ok(t)
             }
             Node::Boolean { typ: Some(t), .. } => Ok(t.clone()),
             Node::Boolean { typ, .. } => {
-                let t = env.bool_type.clone();
+                let t = rt.bool_type.clone();
                 *typ = Some(t.clone());
                 Ok(t)
             }
             Node::String { typ: Some(t), .. } => Ok(t.clone()),
             Node::String { typ, .. } => {
-                let t = env.str_type.clone();
+                let t = rt.str_type.clone();
                 *typ = Some(t.clone());
                 Ok(t)
             }
@@ -214,9 +218,9 @@ impl Node {
                 typ,
                 op0,
                 rawtyp,
-            } => match rawtyp.typecheck(env, None)?.as_ref() {
+            } => match rawtyp.typecheck(rt, None)?.as_ref() {
                 Type::TypeOf(t) => {
-                    let op0t = op0.typecheck(env, Some(t.clone()))?;
+                    let op0t = op0.typecheck(rt, Some(t.clone()))?;
                     if *op0t != **t {
                         return Err(Error::TypeError(
                             *sloc,
@@ -238,7 +242,7 @@ impl Node {
             },
             Node::Invert { typ: Some(t), .. } => Ok(t.clone()),
             Node::Invert { sloc, typ, op0 } => {
-                let t = op0.typecheck(env, None)?;
+                let t = op0.typecheck(rt, None)?;
                 if *t != Type::Boolean && *t != Type::Integer {
                     return Err(Error::TypeError(
                         *sloc,
@@ -257,8 +261,8 @@ impl Node {
                 rhs,
                 iscmp,
             } => {
-                let lhsty = lhs.typecheck(env, None)?;
-                let rhsty = rhs.typecheck(env, None)?;
+                let lhsty = lhs.typecheck(rt, None)?;
+                let rhsty = rhs.typecheck(rt, None)?;
                 if *lhsty != *rhsty {
                     return Err(Error::TypeError(
                         *sloc,
@@ -271,7 +275,7 @@ impl Node {
                 }
 
                 let t = match (op, iscmp, lhsty.as_ref()) {
-                    (_, true, Type::Integer) => env.bool_type.clone(),
+                    (_, true, Type::Integer) => rt.bool_type.clone(),
                     (BinOp::And | BinOp::Or, _, Type::Boolean) => lhsty,
                     (BinOp::And | BinOp::Or, _, _) => {
                         return Err(Error::TypeError(
@@ -298,7 +302,7 @@ impl Node {
                 op1,
                 op2,
             } => {
-                let op0ty = op0.typecheck(env, None)?;
+                let op0ty = op0.typecheck(rt, None)?;
                 if *op0ty != Type::Boolean {
                     return Err(Error::TypeError(
                         *sloc,
@@ -309,8 +313,8 @@ impl Node {
                     ));
                 }
 
-                let op1ty = op1.typecheck(env, None)?;
-                let op2ty = op2.typecheck(env, None)?;
+                let op1ty = op1.typecheck(rt, None)?;
+                let op2ty = op2.typecheck(rt, None)?;
                 if *op1ty != *op2ty {
                     return Err(Error::TypeError(
                         *sloc,
@@ -334,18 +338,18 @@ impl Node {
             } => {
                 let mut arg_types = Vec::with_capacity(args.len());
                 for (arg_name, arg_typ, arg_typ_ast) in args.iter_mut() {
-                    let t = arg_typ_ast.typecheck(env, None)?;
+                    let t = arg_typ_ast.typecheck(rt, None)?;
                     match t.as_ref() {
                         Type::TypeOfType => {
                             *arg_typ = Some(t.clone());
                             arg_types.push((arg_name.clone(), t.clone()));
                             let ph = Rc::new(Type::Placeholder(arg_name.clone()));
-                            env.push(arg_name, Value::Type(ph));
+                            rt.push(arg_name, Value::Type(ph));
                         }
                         Type::TypeOf(t) => {
                             *arg_typ = Some(t.clone());
                             arg_types.push((arg_name.clone(), t.clone()));
-                            env.push(arg_name, Value::Pseudo(t.clone()));
+                            rt.push(arg_name, Value::Pseudo(t.clone()));
                         }
                         _ => {
                             return Err(Error::TypeError(
@@ -359,8 +363,8 @@ impl Node {
                         }
                     };
                 }
-                let ret_type = body.borrow_mut().typecheck(env, None)?;
-                env.pop(args.len());
+                let ret_type = body.borrow_mut().typecheck(rt, None)?;
+                rt.pop(args.len());
                 let t = Rc::new(Type::Lambda(arg_types, ret_type));
                 *typ = Some(t.clone());
                 Ok(t)
@@ -374,18 +378,18 @@ impl Node {
             } => {
                 let mut arg_types = Vec::with_capacity(argtypes.len());
                 for (arg_name, arg_typ, arg_typ_ast) in argtypes.iter_mut() {
-                    let t = arg_typ_ast.typecheck(env, None)?;
+                    let t = arg_typ_ast.typecheck(rt, None)?;
                     match t.as_ref() {
                         Type::TypeOfType => {
                             *arg_typ = Some(t.clone());
                             arg_types.push((arg_name.clone(), t.clone()));
                             let ph = Rc::new(Type::Placeholder(arg_name.clone()));
-                            env.push(arg_name, Value::Type(ph));
+                            rt.push(arg_name, Value::Type(ph));
                         }
                         Type::TypeOf(t) => {
                             *arg_typ = Some(t.clone());
                             arg_types.push((arg_name.clone(), t.clone()));
-                            env.push(arg_name, Value::Pseudo(t.clone()));
+                            rt.push(arg_name, Value::Pseudo(t.clone()));
                         }
                         _ => {
                             return Err(Error::TypeError(
@@ -399,7 +403,7 @@ impl Node {
                         }
                     };
                 }
-                let ret_type = rettyp.borrow_mut().typecheck(env, None)?;
+                let ret_type = rettyp.borrow_mut().typecheck(rt, None)?;
                 let ret_type = match ret_type.as_ref() {
                     Type::TypeOf(t) => t.clone(),
                     other => {
@@ -409,7 +413,7 @@ impl Node {
                         ))
                     }
                 };
-                env.pop(argtypes.len());
+                rt.pop(argtypes.len());
                 let t = Rc::new(Type::TypeOf(Rc::new(Type::Lambda(arg_types, ret_type))));
                 *typ = Some(t.clone());
                 Ok(t)
@@ -421,7 +425,7 @@ impl Node {
                 callable,
                 args,
             } => {
-                let callable_typ = callable.typecheck(env, None)?;
+                let callable_typ = callable.typecheck(rt, None)?;
                 let Type::Lambda(arg_types, ret_type) = callable_typ.as_ref() else {
                     return Err(Error::Uncallable(*sloc, format!("not callable: {}", callable)));
                 };
@@ -435,7 +439,7 @@ impl Node {
 
                 let mut ret_type = ret_type.clone();
                 for (arg, (arg_name, arg_type)) in args.iter_mut().zip(arg_types) {
-                    let typ = arg.typecheck(env, None)?;
+                    let typ = arg.typecheck(rt, None)?;
                     if **arg_type == Type::TypeOfType {
                         ret_type = ret_type.subst(
                             arg_name.as_ref(),
@@ -471,10 +475,10 @@ impl Node {
                 typeannot: None,
                 body,
             } => {
-                let valuety = value.typecheck(env, None)?;
-                env.push(name, Value::Pseudo(valuety));
-                let bodyty = body.typecheck(env, None)?;
-                env.pop(1);
+                let valuety = value.typecheck(rt, None)?;
+                rt.push(name, Value::Pseudo(valuety));
+                let bodyty = body.typecheck(rt, None)?;
+                rt.pop(1);
                 *typ = Some(bodyty.clone());
                 Ok(bodyty)
             }
@@ -486,7 +490,7 @@ impl Node {
                 typeannot: Some(rawtypeannot),
                 body,
             } => {
-                let annot = rawtypeannot.typecheck(env, None)?;
+                let annot = rawtypeannot.typecheck(rt, None)?;
                 let annot = match annot.as_ref() {
                     Type::TypeOf(t) => t,
                     other => {
@@ -499,16 +503,16 @@ impl Node {
                         ))
                     }
                 };
-                env.push(name, Value::Pseudo(annot.clone()));
-                let valuety = value.typecheck(env, Some(annot.clone()))?;
+                rt.push(name, Value::Pseudo(annot.clone()));
+                let valuety = value.typecheck(rt, Some(annot.clone()))?;
                 if **annot != *valuety {
                     return Err(Error::TypeError(
                         *sloc,
                         format!("type missmatch: {} vs {}", valuety.as_ref(), annot.as_ref()),
                     ));
                 }
-                let bodyty = body.typecheck(env, None)?;
-                env.pop(1);
+                let bodyty = body.typecheck(rt, None)?;
+                rt.pop(1);
                 *typ = Some(bodyty.clone());
                 Ok(bodyty)
             }
@@ -516,7 +520,7 @@ impl Node {
             Node::Record { typ, fields, .. } => {
                 let fields: Result<Vec<_>, _> = fields
                     .iter_mut()
-                    .map(|(name, val)| val.typecheck(env, None).map(|t| (name.clone(), t)))
+                    .map(|(name, val)| val.typecheck(rt, None).map(|t| (name.clone(), t)))
                     .collect();
                 let t = Rc::new(Type::Record(fields?));
                 *typ = Some(t.clone());
@@ -531,7 +535,7 @@ impl Node {
                     .iter_mut()
                     .map(|(name, rawtyp)| {
                         rawtyp
-                            .typecheck(env, None)
+                            .typecheck(rt, None)
                             .and_then(|t| match t.as_ref() {
                                 Type::TypeOf(t) => Ok(t.clone()),
                                 other => Err(Error::TypeError(
@@ -555,7 +559,7 @@ impl Node {
                 typ,
                 op0,
                 field,
-            } => match op0.typecheck(env, None)?.as_ref() {
+            } => match op0.typecheck(rt, None)?.as_ref() {
                 Type::Record(fields) => match fields
                     .iter()
                     .find(|(name, _)| name.as_ref() == field.as_ref())
@@ -579,7 +583,7 @@ impl Node {
                 as_typ,
                 as_raw,
             } => {
-                let t = as_raw.typecheck(env, None)?;
+                let t = as_raw.typecheck(rt, None)?;
                 let t = match t.as_ref() {
                     Type::TypeOf(t) => t,
                     other => {
@@ -593,7 +597,7 @@ impl Node {
                     }
                 };
                 *as_typ = Some(t.clone());
-                let op0type = op0.typecheck(env, None)?;
+                let op0type = op0.typecheck(rt, None)?;
                 match (op0type.as_ref(), t.as_ref()) {
                     (_, Type::Any) => {
                         *typ = Some(t.clone());

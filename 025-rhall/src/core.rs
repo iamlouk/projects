@@ -4,7 +4,11 @@ use std::{
     rc::Rc,
 };
 
-use crate::{ast::Node, eval::Env, lex};
+use crate::{
+    ast::Node,
+    eval::{eval, Scope},
+    lex,
+};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SLoc {
@@ -189,7 +193,10 @@ pub enum Value {
     Int(i64),
     Str(Rc<str>),
     Type(Rc<Type>),
-    Lambda(Vec<(Rc<str>, Rc<Type>)>, Rc<RefCell<Node>>),
+    // TODO: This will cause cyclic Rc<...> references: The lambda is in the
+    // scope for this lambda. This is unavoidable for recursive functions.
+    // Solution: A weak rc somewhere... But where?
+    Lambda(Rc<Lambda>),
     Builtin(Rc<Builtin>),
     Option(Rc<Type>, Option<Box<Value>>),
     Record(Vec<(Rc<str>, Value)>),
@@ -200,7 +207,14 @@ pub struct Builtin {
     pub name: &'static str,
     pub argtypes: Vec<(Rc<str>, Rc<Type>)>,
     pub rettyp: Rc<Type>,
-    pub f: Box<dyn Fn(&mut Env, Vec<Value>) -> Result<Value, Error>>,
+    pub f: Box<dyn Fn(Vec<Value>) -> Result<Value, Error>>,
+}
+
+#[derive(Debug)]
+pub struct Lambda {
+    pub args: Vec<(Rc<str>, Rc<Type>)>,
+    pub body: Rc<RefCell<Node>>,
+    pub scope: RefCell<Rc<Scope>>,
 }
 
 impl Debug for Builtin {
@@ -214,48 +228,48 @@ impl Debug for Builtin {
 }
 
 impl Value {
-    pub fn get_type(&self, env: &Env) -> Rc<Type> {
+    pub fn get_type(&self) -> Rc<Type> {
         match self {
             Value::Pseudo(t) => t.clone(),
-            Value::Bool(_) => env.bool_type.clone(),
-            Value::Int(_) => env.int_type.clone(),
-            Value::Str(_) => env.str_type.clone(),
+            Value::Bool(_) => Rc::new(Type::Boolean),
+            Value::Int(_) => Rc::new(Type::Integer),
+            Value::Str(_) => Rc::new(Type::String),
             Value::Type(t) => {
                 if **t == Type::TypeOfType {
-                    env.type_type.clone()
+                    Rc::new(Type::TypeOfType)
                 } else {
                     Rc::new(Type::TypeOf(t.clone()))
                 }
             }
-            Value::Lambda(args, body) => Rc::new(Type::Lambda(
-                args.clone(),
-                body.borrow().get_type().unwrap(),
+            Value::Lambda(lambda) => Rc::new(Type::Lambda(
+                lambda.args.clone(),
+                lambda.body.borrow().get_type().unwrap(),
             )),
             Value::Builtin(b) => Rc::new(Type::Lambda(b.argtypes.clone(), b.rettyp.clone())),
             Value::Option(t, _) => Rc::new(Type::Option(t.clone())),
             Value::Record(fields) => Rc::new(Type::Record(
                 fields
                     .iter()
-                    .map(|(name, val)| (name.clone(), val.get_type(env)))
+                    .map(|(name, val)| (name.clone(), val.get_type()))
                     .collect(),
             )),
-            Value::Any(_, _) => env.any_type.clone(),
+            Value::Any(_, _) => Rc::new(Type::Any),
         }
     }
 
-    pub fn apply(&self, sloc: SLoc, env: &mut Env, args: Vec<Value>) -> Result<Value, Error> {
+    pub fn apply(&self, sloc: SLoc, args: Vec<Value>) -> Result<Value, Error> {
         match self {
-            Value::Lambda(argnames, body) => {
-                assert!(args.len() == argnames.len());
-                for (value, (name, _)) in args.into_iter().zip(argnames) {
-                    env.push(name, value);
+            Value::Lambda(lambda) => {
+                let scope = lambda.scope.borrow();
+                let mut scope = scope.clone();
+                assert!(args.len() == lambda.args.len());
+                for (value, (name, _)) in args.into_iter().zip(&lambda.args) {
+                    scope = scope.push(name, value);
                 }
 
-                let res = env.eval(&body.borrow())?;
-                env.pop(argnames.len());
-                Ok(res)
+                eval(&lambda.body.borrow(), &scope)
             }
-            Value::Builtin(b) => (b.f)(env, args),
+            Value::Builtin(b) => (b.f)(args),
             _ => Err(Error::Uncallable(sloc, format!("{}", self))),
         }
     }
@@ -277,16 +291,16 @@ impl Display for Value {
             Value::Int(x) => write!(f, "{}", x),
             Value::Str(s) => write!(f, "{:?}", s.as_ref()),
             Value::Type(t) => Display::fmt(t.as_ref(), f),
-            Value::Lambda(args, node) => {
+            Value::Lambda(lambda) => {
                 write!(f, "λ(")?;
-                for (i, (name, typ)) in args.iter().enumerate() {
+                for (i, (name, typ)) in lambda.args.iter().enumerate() {
                     if i != 0 {
                         write!(f, ", {}: {}", name.as_ref(), typ)?;
                     } else {
                         write!(f, "{}: {}", name.as_ref(), typ)?;
                     }
                 }
-                write!(f, ") -> ({})", node.as_ref().borrow())
+                write!(f, ") -> ({})", lambda.body.as_ref().borrow())
             }
             Value::Builtin(b) => write!(f, "{}", b.name),
             Value::Option(_, Some(val)) => write!(f, "Some({})", val),

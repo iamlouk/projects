@@ -8,7 +8,7 @@ mod core;
 mod eval;
 mod lex;
 
-use eval::Env;
+use eval::{eval, Runtime, Scope};
 
 use crate::ast::Parser;
 use crate::lex::Lexer;
@@ -19,28 +19,31 @@ fn main() {
         .read_to_string(&mut buf)
         .expect("I/O failure");
 
-    let mut env = Env::new();
-    eval::add_builtins(&mut env);
-    let mut lexer = Lexer::new(buf.as_str(), 0, &mut env.string_pool);
-    let mut parser = Parser::new(&mut lexer);
-    let mut node = match parser.parse_all() {
-        Ok(node) => node,
-        Err(e) => {
-            eprintln!("parsing failed: {:?}", e);
-            std::process::exit(1)
-        }
+    let rt = Runtime::new();
+    let node = {
+        let mut rtref = rt.borrow_mut();
+        let mut lexer = Lexer::new(buf.as_str(), 0, &mut rtref.string_pool);
+        let mut parser = Parser::new(&mut lexer);
+        let mut node = match parser.parse_all() {
+            Ok(node) => node,
+            Err(e) => {
+                eprintln!("parsing failed: {:?}", e);
+                std::process::exit(1)
+            }
+        };
+        println!("# AST: {}", node.as_ref());
+        let typ = match node.typecheck(&mut rtref, None) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("type-check failed: {:?}", e);
+                std::process::exit(1)
+            }
+        };
+        println!("# TYP: {}", typ);
+        node
     };
-    println!("# AST: {}", node.as_ref());
-    let typ = match node.typecheck(&mut env, None) {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("type-check failed: {:?}", e);
-            std::process::exit(1)
-        }
-    };
-    println!("# TYP: {}", typ);
 
-    match env.eval(node.as_ref()) {
+    match eval(node.as_ref(), &Scope::from(rt)) {
         Ok(val) => println!("{}", val),
         Err(e) => eprintln!("{:?}", e),
     };
@@ -52,8 +55,7 @@ mod test {
 
     #[test]
     fn examples() {
-        let mut env = Env::new();
-        eval::add_builtins(&mut env);
+        let rt = Runtime::new();
 
         use std::path::PathBuf;
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -72,18 +74,21 @@ mod test {
             let sourcecode = std::fs::read_to_string(&path).unwrap();
             eprintln!("testing: {}", name);
 
-            let mut lexer = Lexer::new(sourcecode.as_str(), 0, &mut env.string_pool);
-            let mut parser = Parser::new(&mut lexer);
-            let mut example = parser.parse_all().expect("parsing failed");
+            let (example, typ) = {
+                let mut rtref = rt.borrow_mut();
+                let mut lexer = Lexer::new(sourcecode.as_str(), 0, &mut rtref.string_pool);
+                let mut parser = Parser::new(&mut lexer);
+                let mut example = parser.parse_all().expect("parsing failed");
+                let typ = example
+                    .typecheck(&mut *rtref, None)
+                    .expect("type check failed");
+                (example, typ)
+            };
 
-            let typ = example
-                .typecheck(&mut env, None)
-                .expect("type check failed");
-            let val = env.eval(&example).expect("evaluation failed");
-
+            let val = eval(&example, &Scope::from(rt.clone())).expect("evaluation failed");
             let res = format!("{}", val);
             assert_eq!(expected.trim(), res.trim());
-            assert_eq!(typ.as_ref(), val.get_type(&env).as_ref());
+            assert_eq!(typ.as_ref(), val.get_type().as_ref());
             path.pop();
         }
     }
