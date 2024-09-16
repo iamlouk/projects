@@ -1,0 +1,12 @@
+[package]
+name = "gol"
+version = "0.1.0"
+edition = "2021"
+
+[profile.dev]
+opt-level = 1
+
+[dependencies]
+sdl2 = "*"
+rand = "*"
+rayon = "*"
