@@ -128,10 +128,25 @@ pub enum Node {
     Call(Metadata, Box<Node>, Vec<Node>),
     LetIn(Metadata, Rc<String>, Box<Node>, Box<Node>),
     If(Metadata, Box<Node>, Box<Node>, Box<Node>),
-    Lambda(Metadata, Vec<(Rc<String>, Type)>, Box<Node>)
+    Lambda(Metadata, Vec<(Rc<String>, Type)>, Rc<Node>)
 }
 
 impl Node {
+    /*pub fn get_type(&self) -> Type {
+        match self {
+            Self::Int(md, _)         => md.ttype.clone(),
+            Self::Real(md, _)        => md.ttype.clone(),
+            Self::Bool(md, _)        => md.ttype.clone(),
+            Self::Str(md, _)         => md.ttype.clone(),
+            Self::Id(md, _)          => md.ttype.clone(),
+            Self::BinOp(md, _, _, _) => md.ttype.clone(),
+            Self::Call(md, _, _)     => md.ttype.clone(),
+            Self::LetIn(md, _, _, _) => md.ttype.clone(),
+            Self::If(md, _, _, _)    => md.ttype.clone(),
+            Self::Lambda(md, _, _)   => md.ttype.clone()
+        }
+    }*/
+
     pub fn check_types(&mut self, env: &mut Env<Type>) -> Result<&Type, TCError> {
         match self {
             Self::Int(md, _) | Self::Real(md, _) | Self::Bool(md, _) | Self::Str(md, _)
@@ -176,7 +191,8 @@ impl Node {
                     argtypes.push(Rc::new(ttype.clone()));
                     env.add(arg.0.as_str(), ttype);
                 }
-                let rettype = body.check_types(env)?;
+
+                let rettype = Rc::get_mut(body).unwrap().check_types(env)?;
                 env.pop_scope();
                 md.ttype = Type::Lambda(argtypes, Rc::new(rettype.clone()));
                 Ok(&md.ttype)

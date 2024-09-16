@@ -169,7 +169,7 @@ impl<'input> Parser<'input> {
 
                 self.expect(Tok::ThinArrow(NULLPOS))?;
                 let body = self.parse_expr()?;
-                Node::Lambda(Metadata { pos, ttype: Type::Unkown }, args, Box::new(body))
+                Node::Lambda(Metadata { pos, ttype: Type::Unkown }, args, Rc::new(body))
             },
             Some(Tok::Int(pos, x))   => Node::Int(Metadata{ pos, ttype: Type::Int }, x),
             Some(Tok::Real(pos, x))  => Node::Real(Metadata{ pos, ttype: Type::Real }, x),
