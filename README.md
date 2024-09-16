@@ -20,3 +20,9 @@ Tags: __*C++*__, __*Data Structures*__
 
 A very simple unoptimized and very badly but functioning implementation of a splay tree. A splay tree is self-organizing but not self-balancing: An accessed node gets moved to the root of the tree so that accassing the same elements repeatedly is very fast.
 
+### [Percentiles](./004-percentiles)
+
+Tags: __*Python*__, __*Statistics*__
+
+Calculate percentiles with better time complexity than sorting using _kth element_.
+
