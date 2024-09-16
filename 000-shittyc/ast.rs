@@ -1,30 +1,43 @@
-use std::{fmt::Display, rc::Rc};
+use std::{fmt::Display, hash::Hash, rc::Rc};
 
 use crate::{common::*, lex::{Lexer, Tok}};
 
 #[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct Function {
-    name: Rc<str>,
-    sloc: SLoc,
-    retty: Type,
-    args: Vec<(Rc<str>, Type)>,
-    body: Option<Box<Stmt>>,
-    is_static: bool,
-    locals: Vec<Rc<Decl>>
+    pub name: Rc<str>,
+    pub sloc: SLoc,
+    pub retty: Type,
+    pub args: Vec<(Rc<str>, Type)>,
+    pub body: Option<Box<Stmt>>,
+    pub is_static: bool,
+    pub locals: Vec<Rc<Decl>>
 }
 
 #[allow(dead_code)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct Decl {
-    sloc: SLoc,
-    is_argument: bool,
-    is_local: bool,
-    name: Rc<str>,
-    ty: Type,
-    init: Option<Box<Expr>>,
-    idx: usize
+    pub sloc: SLoc,
+    pub is_argument: bool,
+    pub is_local: bool,
+    pub name: Rc<str>,
+    pub ty: Type,
+    pub init: Option<Box<Expr>>,
+    pub idx: usize
 }
+
+impl Hash for Decl {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_i8((self.is_local as i8) * 2 + (self.is_argument as i8));
+        state.write_usize(self.idx);
+    }
+}
+
+impl PartialEq for Decl {
+    fn eq(&self, other: &Self) -> bool { self.sloc == other.sloc }
+}
+
+impl Eq for Decl {}
 
 #[allow(dead_code)]
 #[derive(Debug, PartialEq)]
@@ -174,6 +187,13 @@ impl Expr {
             _ => false
         }
     }
+
+    pub fn is_constant(&self, max: i64) -> Option<i64> {
+        match self {
+            Expr::Int { num, .. } if *num >= 0 && *num < max => Some(*num),
+            _ => None
+        }
+    }
 }
 
 pub struct Parser {
@@ -182,7 +202,7 @@ pub struct Parser {
 
 #[allow(dead_code)]
 impl Parser {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Parser { current_function: None }
     }
 
@@ -194,7 +214,7 @@ impl Parser {
             .ok_or(Error::UnresolvedSymbol(sloc.clone(), name))
     }
 
-    fn parse_function(&mut self, lex: &mut Lexer) -> Result<Box<Function>, Error> {
+    pub fn parse_function(&mut self, lex: &mut Lexer) -> Result<Box<Function>, Error> {
         let is_static = lex.consume_if_next(Tok::Static)?;
         let retty = self.parse_type(lex)?;
         let (sloc, name) = lex.expect_id("function name")?;
@@ -282,6 +302,22 @@ impl Parser {
             }
             let body = self.parse_stmt(lex)?;
             return Ok(Box::new(Stmt::While { sloc, cond, body }))
+        }
+
+        if Tok::For == tok {
+            lex.next()?;
+            lex.expect_token(Tok::LParen, "expected '(' after for")?;
+            let init = self.parse_stmt(lex)?;
+            let cond = self.parse_expr(lex)?;
+            if cond.get_typ() != Type::Bool {
+                return Err(Error::Type(sloc, cond.get_typ(), "expected boolean condition for while"))
+            }
+            lex.expect_token(Tok::SemiColon, "expected for loop condition")?;
+            let incr = self.parse_stmt(lex)?;
+            lex.expect_token(Tok::LParen, "expected ')' after for")?;
+            let body = self.parse_stmt(lex)?;
+
+            return Ok(Box::new(Stmt::For { sloc, init, cond, incr, body }))
         }
 
         if Tok::If == tok {
@@ -431,6 +467,8 @@ impl Parser {
     fn parse_final_expr(&mut self, lex: &mut Lexer) -> Result<Box<Expr>, Error> {
         let (sloc, tok) = lex.next()?;
         let mut expr = match tok {
+            Tok::True => Box::new(Expr::Int { sloc, typ: Type::Bool, num: 1 }),
+            Tok::False => Box::new(Expr::Int { sloc, typ: Type::Bool, num: 0 }),
             Tok::BitwiseNot => {
                 let val = self.parse_final_expr(lex)?;
                 let typ = val.get_typ();
@@ -603,6 +641,11 @@ impl Parser {
                 }
                 _ => Type::Int { bits: 32, signed: false }
             },
+            (_, Tok::Long) => {
+                lex.consume_if_next(Tok::Long)?;
+                lex.consume_if_next(Tok::Int)?;
+                Type::Int { bits: 64, signed: true }
+            }
             (_, Tok::Char) => Type::Int { bits: 8, signed: false },
             (_, Tok::Struct) => {
                 let name = match lex.peek()? {

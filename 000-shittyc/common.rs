@@ -2,7 +2,7 @@ use std::{fmt::Display, rc::Rc};
 
 use crate::lex::Tok;
 
-#[derive(Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub struct SLoc {
     pub file: Rc<std::path::Path>,
     pub line: u32,
@@ -35,7 +35,7 @@ pub enum Error {
 }
 
 #[allow(dead_code)]
-#[derive(Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum Type {
     Unknown,
     Void,
