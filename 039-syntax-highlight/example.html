@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Syntax Highligthing Test Templae</title>
+  <style>
+    table.highlight {
+      font-family: 'Consolas', monospace;
+    }
+    table.highlight pre {
+      padding: 0px;
+      margin: 0px;
+    }
+    table.highlight tr td:first-child {
+      text-align: left;
+      font-size: 0.8rem;
+      color: #8c8c8c;
+    }
+    table.highlight .kw {
+      font-weight: bold;
+      color: #660066;
+    }
+    table.highlight .comment {
+      font-style: italic;
+      color: #808080;
+    }
+    table.highlight .op {
+      color: #4d4d4d;
+    }
+    table.highlight .cst {
+      color: #446600;
+    }
+    table.highlight .str {
+      color: #b36b00;
+    }
+    table.highlight .ty {
+      color: #000099;
+    }
+  </style>
+</head>
+<body>
+  <table class="highlight">
+  <tr><td>1</td><td><pre><span class="comment">// A simple example!</span></pre></td></tr>
+  <tr><td>2</td><td><pre><span class="ty">float</span> <span class="id">foo</span><span class="op">(</span><span class="ty">size_t</span> <span class="cst">N</span>, <span class="ty">float</span> <span class="ty">const</span> <span class="op">*</span><span class="cst">A</span><span class="op">)</span> <span class="op">{</span></pre></td></tr>
+  <tr><td>3</td><td><pre>  <span class="ty">float</span> <span class="id">sum</span> <span class="op">=</span> <span class="cst">0.f</span><span class="op">;</span></pre></td></tr>
+  <tr><td>4</td><td><pre>  <span class="kw">for</span> <span class="op">(</span><span class="ty">size_t</span> i <span class="op">=</span> <span class="cst">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="cst">N</span><span class="op">;</span> i<span class="op">++)</span></pre></td></tr>
+  <tr><td>5</td><td><pre>    <span class="id">sum</span> <span class="op">+=</span> <span class="cst">A</span><span class="op">[</span>i<span class="op">];</span></pre></td></tr>
+  <tr><td>6</td><td><pre></pre></td></tr>
+  <tr><td>7</td><td><pre>  <span class="comment">// Yet another comment.</span></pre></td></tr>
+  <tr><td>8</td><td><pre>  <span class="id">printf</span><span class="op">(</span><span class="str">&quot;sum: %f\\n&quot;</span>, <span class="id">sum</span><span class="op">);</span></pre></td></tr>
+  <tr><td>9</td><td><pre>  <span class="kw">return</span> <span class="id">sum</span><span class="op">;</span></pre></td></tr>
+  <tr><td>10</td><td><pre><span class="op">}</span></pre></td></tr>
+  <tr><td>11</td><td><pre></pre></td></tr>
+</table>
+
+</body>
+</html>

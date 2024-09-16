@@ -227,6 +227,12 @@ Tags: __*C*__, __*Rust*__, __*Compiler*__
 
 A extremely shitty compiler for a C subset. Very few features for now, but some basic stuff works. Needs a lot more stuff to become even close to useful and more tests. The lexer works. The preprocessor has support for `#include` and `#define FOO` (but not for macros with macro parameters). The parser and typechecker is decent (no globals except functions, no `goto`/`continue`/`break`) but far from done. The ISel/CodeGen is extremely unfinished but the basic design should work. It works on the AST directly, there is no IR, and has for now no proper reg. allocation.
 
+## 039: [Syntax Highlighter](./039-syntax-highlight/example.html)
+
+Tags: __*JS*__, __*Deno*__
+
+A project I started mostly to try out the Deno JS runtime, do a bit of TypeScript, and to play with regular expressions. Currently, only C is supported, and the output must be HTML.
+
 ## Future Ideas:
 
 - A REDIS clone (using epoll etc), maybe in Rust?

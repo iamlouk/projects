@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/assert_equals.ts";
-import { categorize, languageC, Kind } from "./main.ts";
+import { categorize, tohtml, languageC, Kind } from "./main.ts";
 
 const SOURCES_FOO: string = `// A simple example!
 float foo(size_t N, float const *A) {
@@ -28,6 +28,15 @@ Deno.test(function comment1() {
   assertEquals(
     categorize('// hello world', languageC),
     [[{ kind: Kind.COMMENT, data: '// hello world' }]]);
+});
+
+Deno.test(function comment2() {
+  assertEquals(
+    tohtml(categorize('// hello world', languageC)),
+`<table class="highlight">
+  <tr><td>1</td><td><pre><span class="comment">// hello world</span></pre></td></tr>
+</table>
+`);
 });
 
 Deno.test(function foo() {
@@ -74,7 +83,8 @@ Deno.test(function foo() {
         { data: "size_t", kind: Kind.TYPE },
         { data: " i ", kind: Kind.OTHER },
         { data: "=", kind: Kind.OPERATOR },
-        { data: " 0", kind: Kind.OTHER },
+        { data: " ", kind: Kind.OTHER },
+        { data: "0", kind: Kind.CONSTANT },
         { data: ";", kind: Kind.OPERATOR },
         { data: " i ", kind: Kind.OTHER },
         { data: "<", kind: Kind.OPERATOR },
