@@ -8,16 +8,33 @@
 #include <string.h>
 #include <errno.h>
 
+#if !defined(__aarch64__)
+#error "this is not portable at all"
+#endif
+static const uint64_t
+			PSTATE_N_BIT = 31,
+			PSTATE_Z_BIT = 30,
+			PSTATE_C_BIT = 29,
+			PSTATE_V_BIT = 28;
+
 static uint64_t sve_vector_bits = 1024, sve_vector_bytes = 128; // Can be changed via SVEIE_VL.
 static __thread bool sve_initialized = false; // per-thread marker if sve_regs allocated.
 static __thread void *sve_regs[32]; // each entry must point to sve_vector_bytes bytes.
 static __thread uint16_t *sve_predicate_regs[16]; // uint16_t because 128 / 8 (min. SVE VL).
 
 static _Atomic uint64_t stats_sve_ops = 0;
+static _Atomic uint64_t stats_sve_adds = 0;
 
 static inline void helper_pred_set_zero(uint32_t pred) {
 	for (uint64_t i = 0; i < sve_vector_bytes / 16; i++)
 		sve_predicate_regs[pred][i] = 0;
+}
+
+static inline bool helper_pred_is_zero(uint32_t pred) {
+	for (uint64_t i = 0; i < sve_vector_bytes / 16; i++)
+		if (sve_predicate_regs[pred][i] != 0)
+			return false;
+	return true;
 }
 
 static inline void helper_pred_set_bit(uint32_t pred, uint32_t pos, bool val) {
@@ -31,6 +48,21 @@ static inline bool helper_pred_get_bit(uint32_t pred, uint32_t pos) {
 	return (sve_predicate_regs[pred][byte] & (1u << bit)) != 0;
 }
 
+#ifdef DEBUG
+static void helper_print_pred(uint32_t pred) {
+	char buf[1024];
+	char *pos = &buf[0];
+	for (uint64_t i = 0; i < sve_vector_bytes / 16; i++) {
+		for (uint64_t j = 0; j < 16; j++) {
+			*(pos++) = sve_predicate_regs[pred][i] & (1u << j) ? '1' : '0';
+			if (j == 7 || j == 15) *(pos++) = ' ';
+		}
+	}
+	*pos = '\0';
+	fprintf(stderr, "SVE predicate register #%d: %s\n", pred, buf);
+}
+#endif
+
 static inline uint32_t helper_size_enc(uint32_t raw_size) {
 	return 1u << raw_size;
 }
@@ -38,6 +70,11 @@ static inline uint32_t helper_size_enc(uint32_t raw_size) {
 static inline int32_t helper_sign_extend(int32_t imm, uint32_t bits) {
 	int32_t m = 1U << (bits - 1);
 	return (imm ^ m) - m;
+}
+
+static inline void helper_set_bit(unsigned long long *x, uint64_t pos, bool val) {
+	if (val) *x |=  (1ul << pos);
+	else     *x &= ~(1ul << pos);
 }
 
 // The cntb/cnth/cntw/cnth instruction:
@@ -68,6 +105,35 @@ static void emulate_sve_ptrue(uint32_t inst, ucontext_t *uctx, mcontext_t *mctx)
 		helper_pred_set_bit(pd, i, true);
 }
 
+// The whilelo instruction:
+static const uint32_t SVE_WHILELO_BITS_MASK = 0xff20ec10;
+static const uint32_t SVE_WHILELO_BITS = 0x25200c00;
+static void emulate_sve_whilelo(uint32_t inst, ucontext_t *uctx, mcontext_t *mctx) {
+	(void) uctx;
+	uint32_t pd = inst & 0xf,
+			 rn = (inst >> 5) & 0x1f,
+			 sf = (inst >> 12) & 0x1,
+			 rm = (inst >> 16) & 0x1f,
+			 size = helper_size_enc((inst >> 22) & 0x3);
+	assert(sf == 1 && "other variants are unimplemented");
+	helper_pred_set_zero(pd);
+	uint64_t n = rn == 31 ? 0 : mctx->regs[rn],
+		 m = rm == 31 ? 0 : mctx->regs[rm];
+	uint64_t nelms = sve_vector_bytes / size;
+	bool firstactive = n < m, lastactive = false;
+	for (uint64_t i = 0; i < nelms; i++) {
+		lastactive = (n++) < m;
+		helper_pred_set_bit(pd, i * size, lastactive);
+	}
+	helper_set_bit(&mctx->pstate, PSTATE_N_BIT, firstactive);
+	helper_set_bit(&mctx->pstate, PSTATE_Z_BIT, !firstactive);
+	helper_set_bit(&mctx->pstate, PSTATE_C_BIT, !lastactive);
+	helper_set_bit(&mctx->pstate, PSTATE_V_BIT, 0);
+#ifdef DEBUG
+	helper_print_pred(pd);
+#endif
+}
+
 // Only the 32bit variant of 'LD1W (scalar plus immediate)':
 static const uint32_t SVE_LD1W_BITS_MASK = 0xfff0e000;
 static const uint32_t SVE_LD1W_BITS = 0xa540a000;
@@ -76,13 +142,30 @@ static void emulate_sve_ld1w(uint32_t inst, ucontext_t *uctx, mcontext_t *mctx) 
 	uint32_t zt = inst & 0x1f,
 		 rn = (inst >> 5) & 0x1f,
 		 pg = (inst >> 10) & 0x7;
-	int32_t imm = helper_sign_extend((inst >> 16) & 0xf, 4) * (sve_vector_bits / 8);
+	int32_t imm = helper_sign_extend((inst >> 16) & 0xf, 4) * sve_vector_bytes;
 	uint32_t *base = (uint32_t*)(rn == 31 ? mctx->sp : mctx->regs[rn]);
 	uint32_t *sve_reg = sve_regs[zt];
 	int32_t size = 4, nelms = sve_vector_bytes / size;
 	for (int32_t i = 0; i < nelms; i++)
 		if (helper_pred_get_bit(pg, i * size))
 			sve_reg[i] = base[imm + i];
+}
+
+// 'LD1W (scalar plus scalar)'
+static const uint32_t SVE_LD1W_SPS_BITS_MASK = 0xffe0e000;
+static const uint32_t SVE_LD1W_SPS_BITS = 0xa5404000;
+static void emulate_sve_ld1w_sps(uint32_t inst, ucontext_t *uctx, mcontext_t *mctx) {
+	(void) uctx;
+	uint32_t zt = inst & 0x1f,
+			 rn = (inst >> 5) & 0x1f,
+			 pg = (inst >> 10) & 0x7,
+			 rm = (inst >> 16) & 0x1f;
+	uint32_t *base = (uint32_t*)(rn == 31 ? mctx->sp : mctx->regs[rn]);
+	uint32_t *sve_reg = sve_regs[zt];
+	int32_t size = 4, nelms = sve_vector_bytes / size;
+	for (int32_t i = 0; i < nelms; i++)
+		if (helper_pred_get_bit(pg, i * size))
+			sve_reg[i] = base[mctx->regs[rm] + i];
 }
 
 // Only the 32bit variant of 'FADD (vectors, unpredicated)':
@@ -97,6 +180,7 @@ static void emulate_sve_fadd_vecs_unpred(uint32_t inst, ucontext_t *uctx, mconte
 		 size = helper_size_enc((inst >> 22) & 0x3);
 	assert(size == 4 && "other variants are unimplemented");
 	int32_t nelms = sve_vector_bytes / size;
+	stats_sve_adds += nelms;
 	float *Zd = (float*)sve_regs[zd],
 		*Zn = (float*)sve_regs[zn],
 		*Zm = (float*)sve_regs[zm];
@@ -113,14 +197,33 @@ static void emulate_sve_st1w(uint32_t inst, ucontext_t *uctx, mcontext_t *mctx) 
 		 rn = (inst >> 5) & 0x1f,
 		 pg = (inst >> 10) & 0x7,
 		 size_raw = (inst >> 21) & 0x3;
-	int32_t imm = helper_sign_extend((inst >> 16) & 0xf, 4) * (sve_vector_bits / 8);
-	assert(size_raw == 0x2);
+	int32_t imm = helper_sign_extend((inst >> 16) & 0xf, 4) * sve_vector_bits;
+	assert(size_raw == 0x2 && "other variants are unimplemented");
 	uint32_t *base = (uint32_t*)(rn == 31 ? mctx->sp : mctx->regs[rn]);
 	uint32_t *sve_reg = sve_regs[zt];
 	int32_t size = 4, nelms = sve_vector_bytes / size;
 	for (int32_t i = 0; i < nelms; i++)
 		if (helper_pred_get_bit(pg, i * size))
 			base[imm + i] = sve_reg[i];
+}
+
+// 'ST1W (scalar plus scalar)'
+static const uint32_t SVE_ST1W_SPS_BITS_MASK = 0xff80e000;
+static const uint32_t SVE_ST1W_SPS_BITS = 0xe5004000;
+static void emulate_sve_st1w_sps(uint32_t inst, ucontext_t *uctx, mcontext_t *mctx) {
+	(void) uctx;
+	uint32_t zt = inst & 0x1f,
+			 rn = (inst >> 5) & 0x1f,
+			 pg = (inst >> 10) & 0x7,
+			 rm = (inst >> 16) & 0x1f,
+			 size_raw = (inst >> 21) & 0x3;
+	assert(size_raw == 0x2 && "other variants are unimplemented");
+	uint32_t *base = (uint32_t*)(rn == 31 ? mctx->sp : mctx->regs[rn]);
+	uint32_t *sve_reg = sve_regs[zt];
+	int32_t size = 4, nelms = sve_vector_bytes / size;
+	for (int32_t i = 0; i < nelms; i++)
+		if (helper_pred_get_bit(pg, i * size))
+			base[mctx->regs[rm] + i] = sve_reg[i];
 }
 
 // Initialize thread local register values:
@@ -151,12 +254,18 @@ static void handler(int signal, siginfo_t *siginfo, void *ucontext) {
 		emulate_sve_cnt(inst, uctx, mctx);
 	} else if ((inst & SVE_PTRUE_BITS_MASK) == SVE_PTRUE_BITS) {
 		emulate_sve_ptrue(inst, uctx, mctx);
+	} else if ((inst & SVE_WHILELO_BITS_MASK) == SVE_WHILELO_BITS) {
+		emulate_sve_whilelo(inst, uctx, mctx);
 	} else if ((inst & SVE_LD1W_BITS_MASK) == SVE_LD1W_BITS) {
 		emulate_sve_ld1w(inst, uctx, mctx);
+	} else if ((inst & SVE_LD1W_SPS_BITS_MASK) == SVE_LD1W_SPS_BITS) {
+		emulate_sve_ld1w_sps(inst, uctx, mctx);
 	} else if ((inst & SVE_FADD_VECS_UNPRED_BITS_MASK) == SVE_FADD_VECS_UNPRED_BITS) {
 		emulate_sve_fadd_vecs_unpred(inst, uctx, mctx);
 	} else if ((inst & SVE_ST1W_BITS_MASK) == SVE_ST1W_BITS) {
 		emulate_sve_st1w(inst, uctx, mctx);
+	} else if ((inst & SVE_ST1W_SPS_BITS_MASK) == SVE_ST1W_SPS_BITS) {
+		emulate_sve_st1w_sps(inst, uctx, mctx);
 	} else {
 		fprintf(stderr, "unkown instruction, cannot emulate: %#x (pc: %#llx)\n",
 				inst, mctx->pc);
@@ -208,6 +317,7 @@ __attribute__((destructor)) static void fini() {
 	if (envvar != NULL && strcmp(envvar, "1") == 0) {
 		fprintf(stderr, "SVEIE_STATS: sve_vl = %lu\n", sve_vector_bits);
 		fprintf(stderr, "SVEIE_STATS: sve_ops = %lu\n", stats_sve_ops);
+		fprintf(stderr, "SVEIE_STATS: sve_adds = %lu\n", stats_sve_adds);
 	}
 
 	// TODO: Cleanup on other threads?
