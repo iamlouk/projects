@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Minesweeper!</title>
+    <style>
+        html, body {
+            background-color: #444;
+            margin: 5px;
+            padding: 0px;
+            color: white;
+            font-family: monospace;
+        }
+
+        #grid {
+            display: flex;
+            flex-direction: column;
+        }
+
+        #grid > div.row {
+            display: flex;
+            flex-direction: row;
+        }
+
+        #grid > div.row > div {
+            cursor: default;
+            margin: 0px;
+            width: 25px;
+            height: 25px;
+            text-align: center;
+            border: 1px solid #666;
+        }
+
+        #grid > div.row > div.covered {
+            cursor: pointer;
+            background-color: #111;
+        }
+
+        #grid > div.row > div.mined {
+            background-color: red;
+        }
+
+        #grid > div.row > div.flagged {
+            background-color: blue;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        On Click: <i id="action">uncover</i> (toggle via spacebar) <button id="start-solver">Start Solver</button>
+    </div>
+    <div id="grid">
+
+    </div>
+    <script src="minefield.js"></script>
+    <script src="minesweeper-solver.js"></script>
+    <script src="sudoku.js"></script>
+    <script>
+        const $field = document.querySelector('#grid')
+        const $action = document.querySelector('#action')
+
+        const field = new Minefield($field, 25, 40, 0.15)
+        field.initGame()
+
+        const solver = new MinesweeperSolver(field)
+
+        let action = 'uncover';
+
+        $field.addEventListener('click', event => {
+            let i = Number.parseInt(event.target.dataset.i),
+                j = Number.parseInt(event.target.dataset.j)
+
+            if (Number.isNaN(i) || Number.isNaN(j))
+                return
+
+            let cell = field.grid[i][j]
+            if (action == 'uncover')
+                field.uncover(cell)
+            else if (action == 'flag')
+                field.flag(cell)
+            else if (action == 'debug')
+                console.log(cell)
+        })
+
+        document.addEventListener('keydown', event => {
+            if (event.key == ' ') {
+                if (action == 'uncover')
+                    action = 'flag'
+                else if (action == 'flag')
+                    action = 'debug'
+                else if (action == 'debug')
+                    action = 'uncover'
+
+                $action.innerText = action
+            }
+        })
+
+        document.querySelector('#start-solver').addEventListener('click', event => {
+            setInterval(() => {
+                let changes = solver.step(true)
+                if (changes == 0)
+                    event.target.innerText = 'Solver Stuck :('
+            }, 150)
+        })
+    </script>
+</body>
+</html>
