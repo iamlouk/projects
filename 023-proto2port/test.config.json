@@ -1,0 +1,18 @@
+{
+	"port": 8000,
+	"protocols": [
+		{
+			"name": "SSH",
+			"mode": "first-line",
+			"match": "^SSH-2\\.0-.*$",
+			"dstport": 2022
+		},
+		{
+			"name": "HTTP",
+			"mode": "first-line",
+			"match": "^(GET|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|PATCH) .* HTTP\\/.*$",
+			"dstport": 8080
+		}
+	],
+	"fallback-response": "Unknown/Unexpected Protocol"
+}

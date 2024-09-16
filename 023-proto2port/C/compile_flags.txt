@@ -1,0 +1,4 @@
+-std=gnu11
+-Wall
+-Wextra
+-I../../020-cson/
