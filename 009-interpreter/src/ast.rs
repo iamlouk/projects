@@ -1,26 +1,39 @@
 use std::rc::Rc;
 use std::fmt::Write;
+use std::collections::HashMap;
 
 use crate::lexer::{Pos};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Unkown,
-    Unresolved(Box<Node>),
-    Type,
+    Unresolved(Rc<Node>),
+    Type(Rc<Type>),
     Int,
     Real,
     Bool,
     Str,
-    Lambda(Vec<Type>, Box<Type>)
+    Lambda(Vec<Rc<Type>>, Rc<Type>)
+}
+
+#[derive(Debug)]
+pub enum TCError {
+    Unresolvable(Pos),
+    OperandsDoNotMatch(Pos),
+    FunctionArgsDoNotMatch(Pos),
+    ExpectedBool(Pos)
 }
 
 impl Type {
     pub fn to_string(&self, out: &mut String) -> std::fmt::Result {
         match self {
             Self::Unkown => write!(out, "<?>"),
-            Self::Unresolved(name) => write!(out, "<{:?}>", name),
-            Self::Type => write!(out, "Type"),
+            Self::Unresolved(x) => {
+                write!(out, "<")?;
+                x.to_string(out)?;
+                write!(out, ">")
+            },
+            Self::Type(_) => write!(out, "Type"),
             Self::Int => write!(out, "Int"),
             Self::Real => write!(out, "Real"),
             Self::Bool => write!(out, "Bool"),
@@ -37,9 +50,58 @@ impl Type {
             }
         }
     }
+
+    pub fn resolve(&self, env: &Env<Self>) -> Result<Self, TCError> {
+        match self {
+            Self::Unresolved(node) => match node.as_ref() {
+                Node::Id(md, name) => match env.lookup(name) {
+                    Some(Type::Type(t)) => Ok(t.as_ref().clone()),
+                    Some(_) => unimplemented!(),
+                    None => Err(TCError::Unresolvable(md.pos))
+                },
+                _ => unimplemented!()
+            },
+            _ => unimplemented!()
+        }
+    }
 }
 
-#[derive(Debug, Clone, Copy)]
+pub struct Env<V> {
+    // TODO: Smarter DS with less copies:
+    scopes: Vec<HashMap<String, V>>
+}
+
+impl<V> Env<V> {
+    pub fn new() -> Self {
+        Self {
+            scopes: vec![HashMap::new()]
+        }
+    }
+
+    pub fn push_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    pub fn pop_scope(&mut self) {
+        self.scopes.pop();
+    }
+
+    pub fn lookup(&self, key: &str) -> Option<&V> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(val) = scope.get(key) {
+                return Some(val)
+            }
+        }
+        None
+    }
+
+    pub fn add(&mut self, key: &str, val: V) {
+        let scope = self.scopes.last_mut().unwrap();
+        scope.insert(key.to_string(), val);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BinOp {
     And, Or,
     Eq, NotEq,
@@ -49,13 +111,13 @@ pub enum BinOp {
     Mul, Div,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Metadata {
     pub pos: Pos,
     pub ttype: Type
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Node {
     Int(Metadata, i64),
     Real(Metadata, f64),
@@ -70,6 +132,90 @@ pub enum Node {
 }
 
 impl Node {
+    pub fn check_types(&mut self, env: &mut Env<Type>) -> Result<&Type, TCError> {
+        match self {
+            Self::Int(md, _) | Self::Real(md, _) | Self::Bool(md, _) | Self::Str(md, _)
+                => Ok(&md.ttype),
+            Self::Id(md, id) => match env.lookup(id.as_str()) {
+                Some(ttype) => { md.ttype = ttype.clone(); Ok(&md.ttype) },
+                None => Err(TCError::Unresolvable(md.pos))
+            },
+            Self::BinOp(md, op, lhs, rhs) => {
+                let lhs = lhs.check_types(env)?;
+                let rhs = rhs.check_types(env)?;
+                let ttype = match (op, lhs.clone(), rhs.clone()) {
+                    (BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div,
+                        Type::Int, Type::Int) => Type::Int,
+                    (BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div,
+                        Type::Real, Type::Real) => Type::Real,
+                    (BinOp::Eq | BinOp::NotEq | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq,
+                        Type::Int, Type::Int) => Type::Bool,
+                    (BinOp::Eq | BinOp::NotEq | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq,
+                        Type::Real, Type::Real) => Type::Bool,
+                    (BinOp::And | BinOp::Or, Type::Bool, Type::Bool) => Type::Bool,
+                    (BinOp::And | BinOp::Or, Type::Int, Type::Int) => Type::Bool,
+                    (_, _, _) => { return Err(TCError::OperandsDoNotMatch(md.pos)); }
+                };
+                md.ttype = ttype;
+                Ok(&md.ttype)
+            },
+            Self::LetIn(md, name, expr1, expr2) => {
+                let ttype = expr1.check_types(env)?;
+                env.push_scope();
+                env.add(&name, ttype.clone());
+                let ttype = expr2.check_types(env)?;
+                env.pop_scope();
+                md.ttype = ttype.clone();
+                Ok(&md.ttype)
+            },
+            Self::Lambda(md, args, body) => {
+                env.push_scope();
+                let mut argtypes = Vec::with_capacity(args.len());
+                for arg in args {
+                    let ttype = arg.1.resolve(env)?;
+                    argtypes.push(Rc::new(ttype.clone()));
+                    env.add(arg.0.as_str(), ttype);
+                }
+                let rettype = body.check_types(env)?;
+                env.pop_scope();
+                md.ttype = Type::Lambda(argtypes, Rc::new(rettype.clone()));
+                Ok(&md.ttype)
+            },
+            Self::Call(md, callee, args) => {
+                let calleetype = callee.check_types(env)?;
+                let (argtypes, rettype) = match calleetype {
+                    Type::Lambda(argtypes, rettype) => (argtypes, rettype),
+                    _ => { return Err(TCError::FunctionArgsDoNotMatch(md.pos)); }
+                };
+                md.ttype = rettype.as_ref().clone();
+                if args.len() != argtypes.len() {
+                    return Err(TCError::FunctionArgsDoNotMatch(md.pos));
+                }
+                for i in 0..args.len() {
+                    if argtypes[i].as_ref() != args[i].check_types(env)? {
+                        return Err(TCError::FunctionArgsDoNotMatch(md.pos));
+                    }
+                }
+
+                Ok(&md.ttype)
+            },
+            Self::If(md, cond, iftrue, iffalse) => {
+                if *cond.check_types(env)? != Type::Bool {
+                    return Err(TCError::ExpectedBool(md.pos));
+                }
+
+                let t1 = iftrue.check_types(env)?;
+                let t2 = iffalse.check_types(env)?;
+                if t1 == t2 {
+                    return Err(TCError::OperandsDoNotMatch(md.pos));
+                }
+
+                md.ttype = t1.clone();
+                Ok(&md.ttype)
+            }
+        }
+    }
+
     pub fn to_string(&self, out: &mut String) -> std::fmt::Result {
         match self {
             Self::Int(_, x) => write!(out, "{:?}", x),
