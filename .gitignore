@@ -5,6 +5,7 @@ a.out
 *.pyc
 test
 went-nowhere
+.cache
 
 /*/target
 /*/build

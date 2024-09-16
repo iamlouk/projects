@@ -13,9 +13,9 @@ pub struct Lexer<'a> {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Tok {
     Id(Rc<str>),
-    Boolean(bool),
-    Integer(i64),
-    // TODO: A real type...
+    Bool(bool),
+    Int(i64),
+    Real(f64),
     String(Rc<str>),
 
     Let,
@@ -150,12 +150,8 @@ impl<'a> Lexer<'a> {
         None
     }
 
-    fn parse_integer(&mut self, msd: Option<char>, base: u32) -> Result<i64, Error> {
+    fn parse_integer_with_base(&mut self, base: u32) -> Result<i64, Error> {
         self.buffer.clear();
-        if let Some(d) = msd {
-            self.buffer.push(d);
-        }
-
         while let Some(c) = self.chars.peek() {
             if !c.is_digit(base) {
                 break;
@@ -168,6 +164,38 @@ impl<'a> Lexer<'a> {
         self.buffer
             .parse::<i64>()
             .map_err(|e| Error::Lexer(self.sloc, format!("illegal integer literal: {:?}", e)))
+    }
+
+    fn parse_number(&mut self, sloc: SLoc, msd: char) -> Result<(SLoc, Tok), Error> {
+        self.buffer.clear();
+        self.buffer.push(msd);
+        let mut contains_dot = false;
+        while let Some(c) = self.chars.peek().cloned() {
+            if !c.is_digit(10) && c != '.' && c != '_' {
+                break;
+            }
+
+            self.sloc.col += 1;
+            let c = self.next_char().unwrap();
+            if c == '_' {
+                continue;
+            }
+            if c == '.' {
+                contains_dot = true;
+            }
+
+            self.buffer.push(c);
+        }
+
+        if contains_dot {
+            self.buffer.parse::<f64>()
+                .map(|r| (sloc, Tok::Real(r)))
+                .map_err(|e| Error::Lexer(sloc, format!("invalid real literal: {}", e)))
+        } else {
+            self.buffer.parse::<i64>()
+                .map(|i| (sloc, Tok::Int(i)))
+                .map_err(|e| Error::Lexer(sloc, format!("invalid integer literal: {}", e)))
+        }
     }
 
     fn parse_string_into_buffer(&mut self) -> Result<(), Error> {
@@ -298,31 +326,24 @@ impl<'a> std::iter::Iterator for Lexer<'a> {
 
             '\\' | 'λ' => Ok((self.sloc, Tok::Lambda)),
             '∀' => Ok((self.sloc, Tok::Forall)),
-            '⊤' => Ok((self.sloc, Tok::Boolean(true))),
-            '⊥' => Ok((self.sloc, Tok::Boolean(false))),
+            '⊤' => Ok((self.sloc, Tok::Bool(true))),
+            '⊥' => Ok((self.sloc, Tok::Bool(false))),
             '→' => Ok((self.sloc, Tok::Arrow)),
 
             '0' => match self.chars.peek().cloned() {
                 Some('b') => self
-                    .parse_integer(None, 2)
-                    .map(|i| (self.sloc, Tok::Integer(i))),
+                    .parse_integer_with_base(2)
+                    .map(|i| (self.sloc, Tok::Int(i))),
                 Some('o') => self
-                    .parse_integer(None, 8)
-                    .map(|i| (self.sloc, Tok::Integer(i))),
+                    .parse_integer_with_base(8)
+                    .map(|i| (self.sloc, Tok::Int(i))),
                 Some('x') => self
-                    .parse_integer(None, 16)
-                    .map(|i| (self.sloc, Tok::Integer(i))),
-                Some(c) if !c.is_alphanumeric() => Ok((self.sloc, Tok::Integer(0))),
-                None => Ok((self.sloc, Tok::Integer(0))),
-                Some(c) => Err(Error::Lexer(
-                    self.sloc,
-                    format!("illegal character following a 0: {:?}", c),
-                )),
+                    .parse_integer_with_base(16)
+                    .map(|i| (self.sloc, Tok::Int(i))),
+                _ => self.parse_number(self.sloc, '0'),
             },
-            '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' => self
-                .parse_integer(Some(c), 10)
-                .map(|i| (self.sloc, Tok::Integer(i))),
-
+            '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' =>
+                self.parse_number(self.sloc, c),
             '"' => {
                 self.buffer.clear();
                 if let Err(e) = self.parse_string_into_buffer() {
@@ -364,8 +385,8 @@ impl<'a> std::iter::Iterator for Lexer<'a> {
                 match self.buffer.as_str() {
                     "lambda" => Ok((self.sloc, Tok::Lambda)),
                     "forall" => Ok((self.sloc, Tok::Forall)),
-                    "true" => Ok((self.sloc, Tok::Boolean(true))),
-                    "false" => Ok((self.sloc, Tok::Boolean(false))),
+                    "true" => Ok((self.sloc, Tok::Bool(true))),
+                    "false" => Ok((self.sloc, Tok::Bool(false))),
                     "let" => Ok((self.sloc, Tok::Let)),
                     "in" => Ok((self.sloc, Tok::In)),
                     "if" => Ok((self.sloc, Tok::If)),
@@ -390,7 +411,7 @@ mod test {
 
     #[test]
     fn lexing() {
-        let input = "let x = { 42 } in λ(y: Str) -> \"Hello, World!\"";
+        let input = "let x = { 42 } in λ(y: Str) -> \"Hello, World!\" + 3.14";
         let mut string_pool = std::collections::HashSet::<Rc<str>>::new();
         let mut lexer = Lexer::new(input, 0, &mut string_pool);
 
@@ -398,7 +419,7 @@ mod test {
         assert_matches!(lexer.next(), Some(Ok((_, Tok::Id(id)))) if id.as_ref() == "x");
         assert_matches!(lexer.next(), Some(Ok((_, Tok::Assign))));
         assert_matches!(lexer.next(), Some(Ok((_, Tok::LBrace))));
-        assert_matches!(lexer.next(), Some(Ok((_, Tok::Integer(42)))));
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::Int(42)))));
         assert_matches!(lexer.next(), Some(Ok((_, Tok::RBrace))));
         assert_matches!(lexer.next(), Some(Ok((_, Tok::In))));
         assert_matches!(lexer.next(), Some(Ok((_, Tok::Lambda))));
@@ -409,6 +430,8 @@ mod test {
         assert_matches!(lexer.next(), Some(Ok((_, Tok::RParen))));
         assert_matches!(lexer.next(), Some(Ok((_, Tok::Arrow))));
         assert_matches!(lexer.next(), Some(Ok((_, Tok::String(str)))) if str.as_ref() == "Hello, World!");
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::Plus))));
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::Real(3.14)))));
         assert_matches!(lexer.next(), None);
     }
 }
