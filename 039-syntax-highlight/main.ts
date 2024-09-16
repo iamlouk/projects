@@ -16,13 +16,13 @@ export enum Kind {
 export interface Part { kind: Kind; data: string }
 
 export const languageC: LanguageDesc = {
-  keywords: /^(case|continue|default|do|else|extern|goto|if|for|inline|register|restrict|return|static|switch|typedef|typeof|while)/,
+  keywords: /^(case|const|continue|default|do|else|extern|goto|if|for|inline|register|restrict|return|static|switch|typedef|typeof|while)(?=[^A-Za-z_0-9])/,
   comments: /^(\/\/[^\n$]*|#[^\n$]*)/,
-  constants: /^(true|false|(\d[\d\w_\.]*)|([A-Z_]+))/,
-  types: /^(void|signed|unsigned|char|half|int|long|struct|enum|union|bool|float|double|const|(\w[\w\d\_]*\_t))/,
+  constants: /^(true|false|(\d[\d\w_\.]*)|([A-Z_][A-Z_0-9]*))/,
+  types: /^(void|signed|unsigned|char|half|int|long|struct|enum|union|bool|float|double|(\w[\w\d\_]*\_t))(?=[^A-Za-z_0-9])/,
   operators: /^[+\-\*\/%?:=<>&|\[\]\(\)\{\};]+/,
   strings: /^("(\\"|[^"])*"|'(\\'|[^'])*')/,
-  identifier: /^\w[\d\w\_]+/
+  identifier: /^\w[\d\w\_]*/
 };
 
 export function categorize(source: string, lang: LanguageDesc): Part[][] {
@@ -69,6 +69,9 @@ export function categorize(source: string, lang: LanguageDesc): Part[][] {
     lines.push(parts);
   }
 
+  while (lines.length > 0 && lines[lines.length - 1].length == 0)
+    lines.pop();
+
   return lines;
 }
 
@@ -92,24 +95,26 @@ export function tohtml(lines: Part[][]): string {
     [Kind.IDENTIFIER]: "id"
   };
 
-  let text: string[] = [`<table class="highlight">\n`];
+  let text: string[] = [`<div class="highlight"><div>`];
+  for (let i = 0; i < lines.length; i += 1)
+    text.push(`<b class="ln">${(i + 1)}</b>`);
+  text.push(`</div>\n<div><pre>\n`);
   for (let i = 0; i < lines.length; i += 1) {
     let line = lines[i];
-    text.push(`  <tr><td>${(i + 1)}</td><td><pre>`);
     for (let part of line) {
       if (part.kind == Kind.OTHER) {
         text.push(escape(part.data));
       } else {
-        text.push(`<span class="`);
+        text.push(`<b class="`);
         text.push(classes[part.kind]);
         text.push(`">`);
         text.push(escape(part.data));
-        text.push(`</span>`);
+        text.push(`</b>`);
       }
     }
-    text.push(`</pre></td></tr>\n`);
+    text.push(`\n`);
   }
-  text.push(`</table>\n`);
+  text.push(`</pre></div></div>\n`);
   return text.join('');
 }
 

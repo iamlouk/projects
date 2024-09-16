@@ -4,6 +4,7 @@ a.out
 *.bin
 *.pyc
 *.class
+*.output.*
 test
 went-nowhere
 .cache

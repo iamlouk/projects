@@ -4,36 +4,44 @@
   <meta charset="utf-8" />
   <title>Syntax Highligthing Test Templae</title>
   <style>
-    table.highlight {
-      font-family: 'Consolas', monospace;
+    .highlight { font-family: 'Consolas', monospace; }
+    .highlight pre { padding: 0px; margin: 0px; }
+    .highlight b { font-weight: normal; }
+    .highlight div:nth-child(1) {
+      display: inline-block;
+      text-align: right;
+      width: 2rem;
+      float: left;
+      margin-right: 1rem;
     }
-    table.highlight pre {
-      padding: 0px;
-      margin: 0px;
-    }
-    table.highlight tr td:first-child {
-      text-align: left;
-      font-size: 0.8rem;
+    .highlight div:nth-child(2) { display: inline-block; }
+    .highlight .ln {
+      display: inline-block;
+      font-style: italic;
+      width: 100%;
       color: #8c8c8c;
+      height: 1rem;
+      font-size: 0.75rem;
     }
-    table.highlight .kw {
+    .highlight .kw {
       font-weight: bold;
       color: #660066;
     }
-    table.highlight .comment {
+    .highlight .comment {
       font-style: italic;
       color: #808080;
     }
-    table.highlight .op {
+    .highlight .op {
       color: #4d4d4d;
     }
-    table.highlight .cst {
+    .highlight .cst {
       color: #446600;
     }
-    table.highlight .str {
+    .highlight .str {
       color: #b36b00;
     }
-    table.highlight .ty {
+    .highlight .ty {
+      font-weight: bold;
       color: #000099;
     }
   </style>

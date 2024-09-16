@@ -33,9 +33,10 @@ Deno.test(function comment1() {
 Deno.test(function comment2() {
   assertEquals(
     tohtml(categorize('// hello world', languageC)),
-`<table class="highlight">
-  <tr><td>1</td><td><pre><span class="comment">// hello world</span></pre></td></tr>
-</table>
+`<div class="highlight"><div><b class="ln">1</b></div>
+<div><pre>
+<b class="comment">// hello world</b>
+</pre></div></div>
 `);
 });
 
@@ -56,7 +57,7 @@ Deno.test(function foo() {
         { data: ", ", kind: Kind.OTHER },
         { data: "float", kind: Kind.TYPE },
         { data: " ", kind: Kind.OTHER },
-        { data: "const", kind: Kind.TYPE },
+        { data: "const", kind: Kind.KEYWORD },
         { data: " ", kind: Kind.OTHER },
         { data: "*", kind: Kind.OPERATOR },
         { data: "A", kind: Kind.CONSTANT },
@@ -81,17 +82,22 @@ Deno.test(function foo() {
         { data: " ", kind: Kind.OTHER },
         { data: "(", kind: Kind.OPERATOR },
         { data: "size_t", kind: Kind.TYPE },
-        { data: " i ", kind: Kind.OTHER },
+        { data: " ", kind: Kind.OTHER },
+        { data: "i", kind: Kind.IDENTIFIER },
+        { data: " ", kind: Kind.OTHER },
         { data: "=", kind: Kind.OPERATOR },
         { data: " ", kind: Kind.OTHER },
         { data: "0", kind: Kind.CONSTANT },
         { data: ";", kind: Kind.OPERATOR },
-        { data: " i ", kind: Kind.OTHER },
+        { data: " ", kind: Kind.OTHER },
+        { data: "i", kind: Kind.IDENTIFIER },
+        { data: " ", kind: Kind.OTHER },
         { data: "<", kind: Kind.OPERATOR },
         { data: " ", kind: Kind.OTHER },
         { data: "N", kind: Kind.CONSTANT },
         { data: ";", kind: Kind.OPERATOR },
-        { data: " i", kind: Kind.OTHER },
+        { data: " ", kind: Kind.OTHER },
+        { data: "i", kind: Kind.IDENTIFIER },
         { data: "++)", kind: Kind.OPERATOR },
       ],
       [
@@ -102,7 +108,7 @@ Deno.test(function foo() {
         { data: " ", kind: Kind.OTHER },
         { data: "A", kind: Kind.CONSTANT },
         { data: "[", kind: Kind.OPERATOR },
-        { data: "i", kind: Kind.OTHER },
+        { data: "i", kind: Kind.IDENTIFIER },
         { data: "];", kind: Kind.OPERATOR },
       ],
       [],
