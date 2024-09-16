@@ -25,6 +25,14 @@ impl<'input> Parser<'input> {
         }
     }
 
+    pub fn parse(&mut self) -> Result<Node, Error<'input>> {
+        let node = self.parse_expr()?;
+        if !self.lexer.next().is_none() {
+            return Err(Error::Message("expected EOF, found trailing tokens", (0, 0, 0)))
+        }
+        Ok(node)
+    }
+
     fn stringify(&mut self, str: &'input str) -> Rc<String> {
         if let Some(res) = self.string_pool.get(&str) {
             return res.clone();
@@ -202,9 +210,9 @@ impl<'input> Parser<'input> {
 
                 node = Node::Call(Metadata { pos, ttype: Type::Unkown },
                     Box::new(node), args);
+            } else {
+                break;
             }
-
-            break;
         }
 
         Ok(node)
