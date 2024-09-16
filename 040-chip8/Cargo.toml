@@ -10,10 +10,17 @@ overflow-checks = false # Disable integer overflow checks.
 [lib]
 path = "./lib.rs"
 
+[features]
+default = ["termui", "time"]
+termui = ["dep:crossterm"]
+time = []
+
 [[bin]]
 name = "chip8-term"
 path = "./terminal.rs"
+required-features = ["termui", "time"]
 
 [dependencies]
 rand = "*"
-crossterm = "*"
+getrandom = { version = "0.2", features = ["js"] }
+crossterm = { version = "*", optional = true }

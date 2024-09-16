@@ -237,7 +237,7 @@ A project I started mostly to try out the Deno JS runtime, do a bit of TypeScrip
 
 Tags: __*Chip-8*__, __*Rust*__, __*Emulator*__
 
-A [Chip-8](http://devernay.free.fr/hacks/chip8/C8TECH10.HTM) emulator for retro games in rust. The emulator logic is separated from the UI, for now, there only is a `crossterm`-based terminal UI. I think I might add a WASM based Web-UI as well later on. Tetris and [this test ROM](https://github.com/corax89/chip8-test-rom/tree/master) work. To play, run: `cd ./040-chip8/ && cargo run -- ./roms/tetris.ch8`.
+A [Chip-8](http://devernay.free.fr/hacks/chip8/C8TECH10.HTM) emulator for retro games in rust. The emulator logic is separated from the UI, there is a `crossterm`-based terminal UI. Tetris and [this test ROM](https://github.com/corax89/chip8-test-rom/tree/master) work. To play, run: `cd ./040-chip8/ && cargo run -- ./roms/tetris.ch8`. Another UI in a sub-crate provides a WASM based browser interface.
 
 ## Future Ideas:
 

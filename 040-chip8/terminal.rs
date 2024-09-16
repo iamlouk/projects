@@ -79,7 +79,8 @@ impl chip8::UI for TerminalUI {
             self.keys[i] = self.keys[i].saturating_sub(1)
         }
 
-        let stime = std::time::Duration::SECOND / (60 * F) - dt;
+        let stime = (std::time::Duration::SECOND / (60 * F)).saturating_sub(dt);
+        // let stime = std::time::Duration::from_secs(0);
         if crossterm::event::poll(stime).unwrap() {
             use crossterm::event::{Event, KeyCode, ModifierKeyCode};
             match crossterm::event::read().unwrap() {

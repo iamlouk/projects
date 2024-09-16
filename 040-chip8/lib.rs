@@ -105,7 +105,7 @@ impl Instr {
                 0x65 => Instr::LD_REGS_TO_I { upto: x },
                 _ => return Err("invalid instruction with encoding 0xF???"),
             },
-            _ => unreachable!(),
+            _ => return Err("WTF? Impossible!"),
         })
     }
 
@@ -133,16 +133,6 @@ impl Instr {
     }
 }
 
-/*
-impl Debug for Instr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::JP { addr } => writeln!("JP ")
-        }
-    }
-}
-*/
-
 #[allow(dead_code)]
 pub trait UI {
     fn is_key_pressed(&mut self, key: u8) -> bool;
@@ -166,7 +156,7 @@ pub struct Chip8State {
     delay_timer: u8,
     stack: Vec<u16>,
     digit_sprites: [u16; 16],
-    last_frame: std::time::Instant,
+    last_frame: std::time::Duration,
     cycles: u64,
 }
 
@@ -184,7 +174,11 @@ impl Chip8State {
             pc: 0x200,
             stack: Vec::with_capacity(16),
             digit_sprites: [0; 16],
-            last_frame: std::time::Instant::now(),
+            last_frame: if cfg!(feature = "time") {
+                std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
+            } else {
+                std::time::Duration::from_secs(0)
+            },
             cycles: 0,
         });
         fn store_digit(pos: usize, sprite: &[u8], memory: &mut [u8]) -> usize {
@@ -234,9 +228,14 @@ impl Chip8State {
     pub fn cycle(&mut self) -> Result<std::time::Duration, &'static str> {
         self.exec()?;
         self.cycles = self.cycles.wrapping_add(1);
-        let now = std::time::Instant::now();
-        let dt = self.last_frame - now;
-        self.last_frame = now;
+        let dt = if cfg!(feature = "time") {
+            let now = std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap();
+            let dt = now - self.last_frame;
+            self.last_frame = now;
+            dt
+        } else {
+            std::time::Duration::from_secs(0)
+        };
         let timer_tick = self.ui.update(self.cycles, dt)?;
         if timer_tick {
             self.delay_timer = self.delay_timer.saturating_sub(1);

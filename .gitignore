@@ -10,6 +10,7 @@ went-nowhere
 .cache
 
 /*/target
+/*/*/target
 /*/build
 /venv
 

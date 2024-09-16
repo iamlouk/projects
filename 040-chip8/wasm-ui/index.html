@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Chip-8 Emulator</title>
+  <style>
+    html {
+      background-color: #333333;
+    }
+    canvas#chip8 {
+      background-color: #111111;
+      border: 2px solid cyan;
+      margin: 10px;
+      width: calc(64 * 10px);
+      height: calc(32 * 10px);
+    }
+  </style>
+</head>
+<body>
+  <canvas id="chip8"></canvas>
+  <script type="module">
+    import initWASM, { init_chip8 } from "./pkg/chip8_wasm_ui.js"
+    (async () => {
+      const wasm = await initWASM()
+
+      const romreq = await fetch('../roms/1-chip8-logo.ch8')
+      const rom = await romreq.arrayBuffer()
+      const chip8 = init_chip8(10, new Uint8Array(rom))
+
+      let ticks = 0
+      const tick = () => {
+        try {
+          chip8.tick()
+        } catch (e) {
+          console.warn(`ticks: ${ticks}, error:`, e)
+          return;
+        }
+        ticks += 1
+        window.requestAnimationFrame(tick)
+      }
+
+      window.requestAnimationFrame(tick)
+    })()
+  </script>
+</body>
+</html>
