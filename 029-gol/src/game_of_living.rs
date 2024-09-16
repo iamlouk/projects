@@ -31,7 +31,14 @@ impl CA<Cell> for GameOfLiving {
         }
     }
 
-    fn update(&self, x: i64, y: i64, cell: Cell, get_cell: impl Fn(i64, i64) -> Cell) -> Cell {
+    fn update(
+        &self,
+        x: i64,
+        y: i64,
+        cell: Cell,
+        get_cell: impl Fn(i64, i64) -> Cell,
+        _: &mut rand::prelude::ThreadRng,
+    ) -> Cell {
         const NEIGHBOURS: [(i64, i64); 8] = [
             (-2, 0),
             (-1, -1),

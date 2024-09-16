@@ -9,13 +9,22 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 
+mod colors;
 mod continous;
+mod forestfire;
 mod game_of_living;
 
 pub trait CA<Cell: Clone + Default> {
     fn initialize(&self, rng: &mut rand::prelude::ThreadRng, x: i64, y: i64) -> Cell;
     fn render(&self, cell: Cell) -> sdl2::pixels::Color;
-    fn update(&self, x: i64, y: i64, cell: Cell, get_cell: impl Fn(i64, i64) -> Cell) -> Cell;
+    fn update(
+        &self,
+        x: i64,
+        y: i64,
+        cell: Cell,
+        get_cell: impl Fn(i64, i64) -> Cell,
+        rng: &mut rand::prelude::ThreadRng,
+    ) -> Cell;
 }
 
 const CELLS_X: u32 = 300;
@@ -115,12 +124,19 @@ pub fn run<CACell: Clone + Copy + Default + Send + Sync, CAImpl: CA<CACell> + Sy
 
             new_state.par_iter_mut().enumerate().for_each(|(i, row)| {
                 let i = i as i64;
+                let mut rng = rand::thread_rng();
                 for j in 0..(CELLS_Y as i64) {
                     let old_cell = old_state[i as usize][j as usize];
-                    let new_cell = ca.update(i, j, old_cell, |i, j| {
-                        let (i, j) = wrap_idxs(i, j);
-                        old_state[i][j]
-                    });
+                    let new_cell = ca.update(
+                        i,
+                        j,
+                        old_cell,
+                        |i, j| {
+                            let (i, j) = wrap_idxs(i, j);
+                            old_state[i][j]
+                        },
+                        &mut rng,
+                    );
                     row[j as usize] = new_cell;
                 }
             });
@@ -144,6 +160,8 @@ fn main() {
         .unwrap();
     */
 
-    run::<continous::Cell, continous::Continous>(continous::Continous::new());
-    run::<game_of_living::Cell, game_of_living::GameOfLiving>(game_of_living::GameOfLiving::new());
+    run::<forestfire::Cell, forestfire::ForestFire>(forestfire::ForestFire);
+    // run::<colors::Cell, colors::Colors>(colors::Colors);
+    // run::<continous::Cell, continous::Continous>(continous::Continous);
+    // run::<game_of_living::Cell, game_of_living::GameOfLiving>(game_of_living::GameOfLiving);
 }

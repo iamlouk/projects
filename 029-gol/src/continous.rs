@@ -41,7 +41,14 @@ impl CA<Cell> for Continous {
         )
     }
 
-    fn update(&self, x: i64, y: i64, cell: Cell, get_cell: impl Fn(i64, i64) -> Cell) -> Cell {
+    fn update(
+        &self,
+        x: i64,
+        y: i64,
+        cell: Cell,
+        get_cell: impl Fn(i64, i64) -> Cell,
+        _: &mut rand::prelude::ThreadRng,
+    ) -> Cell {
         let sum: f32 = unsafe { NEIGHBOURS.iter() }
             .map(|(dx, dy)| get_cell(x + dx, y + dy))
             .sum();
