@@ -17,6 +17,7 @@ execution_engine = llvm.create_mcjit_compiler(llvm.parse_assembly(""), target_ma
 def getType(name: ast.Name) -> Tuple[ir.Type, Any]:
     match str(name.id):
         case "int": return (ir.IntType(64), ctypes.c_int64)
+        case "float": return (ir.DoubleType(), ctypes.c_double)
         case _: raise RuntimeError(f"unsupported type: {ast.dump(name)}")
 
 def jit(func):
@@ -33,10 +34,17 @@ def jit(func):
     retty, retcty = getType(tree.returns)
     args: list[Tuple[str, ir.Type, Any]] = []
     for arg in tree.args.args:
-        if arg.annotation is None or not isinstance(arg.annotation, ast.Name):
-            raise RuntimeError("Type annotation needed!")
-        irty, cty = getType(arg.annotation)
-        args.append((str(arg.arg), irty, cty))
+        if isinstance(arg.annotation, ast.Name):
+            irty, cty = getType(arg.annotation)
+            args.append((str(arg.arg), irty, cty))
+        elif isinstance(arg.annotation, ast.Subscript):
+            val = arg.annotation.value
+            if isinstance(val, ast.Name) and str(val.id) == 'list' \
+                    and isinstance(arg.annotation.slice, ast.Name):
+                baseirty, basecty = getType(arg.annotation.slice)
+                args.append((str(arg.arg), ir.PointerType(baseirty), ctypes.POINTER(basecty)))
+        else:
+            raise RuntimeError("Type annotation needed/invalid!")
 
     fnty = ir.FunctionType(retty, map(lambda t: t[1], args))
     func_module = ir.Module(f"badjit_function_{tree.name}")
@@ -62,6 +70,18 @@ def jit(func):
         if isinstance(e, ast.Constant) and isinstance(e.value, int):
             return ir.Constant(ir.IntType(64), e.value), ir.IntType(64)
 
+        if isinstance(e, ast.Constant) and isinstance(e.value, float):
+            return ir.Constant(ir.DoubleType(), e.value), ir.DoubleType()
+
+        if isinstance(e, ast.Call) and isinstance(e.func, ast.Name):
+            if str(e.func.id) == str(tree.name):
+                args: list[ir.Value] = []
+                for arg in e.args:
+                    val, _ = handle_expr(b, arg)
+                    args.append(val)
+                res = b.call(func, args)
+                return (res, retty)
+
         if isinstance(e, ast.BinOp):
             lhs, t1 = handle_expr(b, e.left)
             rhs, t2 = handle_expr(b, e.right)
@@ -82,6 +102,8 @@ def jit(func):
             match e.ops[0]:
                 case gt if isinstance(gt, ast.Gt):
                     return typing.cast(ir.Value, b.icmp_signed('>', lhs, rhs)), ir.IntType(1)
+                case lt if isinstance(lt, ast.Lt):
+                    return typing.cast(ir.Value, b.icmp_signed('<', lhs, rhs)), ir.IntType(1)
                 case op:
                     raise RuntimeError(f"unsupported comparison: {ast.dump(op)}")
 
@@ -107,6 +129,9 @@ def jit(func):
             else:
                 val, ty = handle_expr(b, stmt.value)
                 b.ret(val)
+
+            dead_bb = func.append_basic_block('already.returned')
+            b.position_at_start(dead_bb)
             return b
 
         if isinstance(stmt, ast.Assign):
@@ -131,13 +156,40 @@ def jit(func):
             b.position_at_start(end_bb)
             return b
 
+        if isinstance(stmt, ast.If):
+            true_bb = func.append_basic_block('if.then')
+            false_bb = func.append_basic_block('if.else')
+            end_bb = func.append_basic_block('if.end')
+            cond, _ = handle_expr(b, stmt.test)
+            b.cbranch(cond, true_bb, false_bb)
+            b.position_at_start(true_bb)
+            for substmt in stmt.body:
+                b = handle_stmt(b, substmt)
+            b.branch(end_bb)
+            b.position_at_start(false_bb)
+            for substmt in stmt.orelse:
+                b = handle_stmt(b, substmt)
+            b.branch(end_bb)
+            b.position_at_start(end_bb)
+            return b
+
+        if isinstance(stmt, ast.For):
+            assert len(stmt.orelse) == 0
+            assert isinstance(stmt.iter, ast.Call) and isinstance(stmt.iter.func, ast.Name) \
+                and str(stmt.iter.func.id) == "range" and len(stmt.iter.args) == 2
+
+            # TODO...
+
+            assert False
+
         raise RuntimeError(f"unsupported statement: {ast.dump(stmt)}")
 
     bb = func.append_basic_block('start')
     builder.branch(bb)
     builder = ir.IRBuilder(bb)
     for stmt in tree.body:
-        builer = handle_stmt(builder, stmt)
+        builder = handle_stmt(builder, stmt)
+    builder.unreachable()
 
     print(f"{func}")
 

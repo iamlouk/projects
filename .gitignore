@@ -3,11 +3,14 @@ a.out
 *.o
 *.so
 *.bin
+*.pyc
 test
 went-nowhere
 
 /*/target
 /*/build
+/venv
+
 
 /007-mini-vm/minivm
 /015-shitty-sve-ie/example/add_vecs
