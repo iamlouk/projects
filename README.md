@@ -210,5 +210,5 @@ Some fun (nothing useful) with implementing parts of the [BARE](https://datatrac
 
 Tags: __*Hare*__, __*Go*__, __*WebSocket*__
 
-This is a from-scratch implementation of the [WebSocket protocol (RFC6455)](https://datatracker.ietf.org/doc/html/rfc6455), only using the stdlib. It is only a simple subset of the server side of the protocol. For anything serious, there is [golang.org/x/net/websocket](https://pkg.go.dev/golang.org/x/net/websocket), which I used to test my server against. The directory also contains a simple TCP echo server in Hare, because I would like to do a bit more stuff in Hare, and a websocket server might be a good usecase.
+This is a from-scratch implementation of the [WebSocket protocol (RFC6455)](https://datatracker.ietf.org/doc/html/rfc6455), only using the stdlib, in both Golang and the Hare programming language. The Golang version is a simple echo service, the Hare impl. is more flexible and implements a basic chatroom. It is only a simple subset of the server side of the protocol. For anything serious, there is [golang.org/x/net/websocket](https://pkg.go.dev/golang.org/x/net/websocket), which I used to test my server against. The directory also contains a simple TCP echo server in Hare.
 

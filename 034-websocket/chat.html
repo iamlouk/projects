@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <title>WebSocket Chat</title>
+  <style>
+    
+  </style>
+</head>
+<body>
+  <div id="chat">
+    <div>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">User</th>
+            <th scope="col">Kind</th>
+            <th scope="col">Text</th>
+          </tr>
+        </thead>
+        <tbody id="chat-messages">
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <input
+          type="text" id="chat-message" name="chat-message"
+          minlength="1" maxlength="200"
+          placeholder="Your message..." />
+    </div>
+  </div>
+
+  <script>
+    const WS_SERVER_URL = "ws://localhost:12345/chat",
+          WS_PROTO = "chat",
+          STATUS_CONNECTING = "connecting",
+          STATUS_CONNECTED = "connected",
+          STATUS_CLOSED = "closed",
+          MSG_JOINED = "joined",
+          MSG_LEAVING = "leaving",
+          MSG_CHAT = "chat"
+    let status = STATUS_CONNECTING
+    let username = `user#${Math.floor(Math.random() * 1000)}`
+
+    const ws = new WebSocket(WS_SERVER_URL, [WS_PROTO])
+
+    ws.addEventListener('error', eevent => {
+      console.warn("websocket connection error:", eevent)
+      ws.close()
+      status = STATUS_CLOSED
+    })
+
+    ws.addEventListener('close', () => {
+      console.warn("websocket connection closed")
+      status = STATUS_CLOSED
+    })
+
+    ws.addEventListener('open', () => {
+      console.info("websocket connection established, username:", username)
+      ws.send(JSON.stringify({
+        user: username, kind: MSG_JOINED,
+        msg: `${username} just joined!`
+      }))
+      status = STATUS_CONNECTED
+    })
+
+    ws.addEventListener('message', event => {
+      console.assert(status == STATUS_CONNECTED)
+      const { user, kind, msg } = JSON.parse(event.data)
+      console.log({ user, kind, msg })
+      addMessage(user, kind, msg)
+    })
+
+    window.addEventListener('beforeunload', () => {
+      ws.send(JSON.stringify({
+        user: username, kind: MSG_LEAVING,
+        msg: `${username} is leaving!`
+      }))
+      ws.close()
+      status = STATUS_CLOSED
+    })
+
+    const inputBox = document.querySelector('input#chat-message')
+    inputBox.addEventListener('keydown', e => {
+      if (e.key != 'Enter')
+        return;
+
+      ws.send(JSON.stringify({
+        user: username, kind: MSG_CHAT,
+        msg: inputBox.value.trim()
+      }))
+      inputBox.value = '';
+    })
+
+    const messagesTable = document.querySelector('tbody#chat-messages')
+    const addMessage = (user, kind, msg) => {
+      let row = document.createElement('tr')
+      let td = null;
+      td = document.createElement('td')
+      td.innerText = user
+      row.append(td)
+      td = document.createElement('td')
+      td.innerText = kind
+      row.append(td)
+      td = document.createElement('td')
+      td.innerText = msg
+      row.append(td)
+      messagesTable.append(row)
+    }
+
+
+
+  </script>
+</body>
+</html>

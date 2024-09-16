@@ -82,14 +82,21 @@ export fn handshake(wsc: *wsconn) (void | io::error | utf8::invalid | errors::in
 		let key = strings::trim(lowercase(strings::fromutf8(cut.0)?), ' ');
 		let val = strings::trim(strings::fromutf8(cut.1)?, ' ', '\r');
 		append(wsc.headers, (line, key, val));
-		fmt::printfln("- Header #{}: key='{}', val='{}'", i, key, val)!;
+		fmt::printfln("- Hdr #{}: '{}'='{}'", i, key, val)!;
 
 		switch (key) {
-		case "upgrade" => { upgrade_websocket = lowercase(val) == "websocket"; };
-		case "connection" => { connection_upgrade = lowercase(val) == "upgrade"; };
-		case "sec-websocket-version" => {
-			if (val != "13") return errors::invalid;
+		case "upgrade" =>
+			upgrade_websocket = lowercase(val) == "websocket";
+		case "connection" => {
+			let parts = strings::split(lowercase(val), ", ");
+			defer free(parts);
+			for (let i: size = 0; i < len(parts); i += 1)
+				if (parts[i] == "upgrade")
+					connection_upgrade = true;
 		};
+		case "sec-websocket-version" =>
+			if (val != "13")
+				return errors::invalid;
 		case "sec-websocket-key" => {
 			ws_key_str = val;
 			wsc.ws_key = base64::decodestr(&base64::std_encoding, val)?;
@@ -195,12 +202,14 @@ fn recieve_frame(wsc: *wsconn, pollfd: *poll::pollfd)
 		};
 	};
 
-	frame.payload = alloc([0...], payload_len);
 	defer free(frame.payload);
-	match (io::readall(&wsc.bufstream, frame.payload)) {
-	case io::EOF => return errors::invalid;
-	case let err: io::error => return err;
-	case let n: size => yield;
+	if (payload_len != 0) {
+		frame.payload = alloc([0...], payload_len);
+		match (io::readall(&wsc.bufstream, frame.payload)) {
+		case io::EOF => return errors::invalid;
+		case let err: io::error => return err;
+		case let n: size => yield;
+		};
 	};
 	if (frame.masked)
 		for (let i: size = 0; i < payload_len; i += 1)
@@ -224,10 +233,12 @@ fn recieve_frame(wsc: *wsconn, pollfd: *poll::pollfd)
 		return send_frame(wsc, FRAME_PONG, []);
 	};
 	case FRAME_TEXT => yield {
-		fmt::printfln("Text-Frame recieved by client: {}:{} (fd={}, len={})",
+		let res = strings::fromutf8(frame.payload);
+		let valid = res is str;
+		fmt::printfln("Text-Frame recieved by client: {}:{} (fd={}, len={}, valid={})",
 			ip::string(wsc.client_addr), wsc.client_port,
-			wsc.fd: u32, len(frame.payload))!;
-		yield wsc.on_message(wsc, strings::fromutf8(frame.payload)!);
+			wsc.fd: u32, len(frame.payload), valid)!;
+		yield if (valid) wsc.on_message(wsc, res as str) else void;
 	};
 	case FRAME_BINARY => yield {
 		fmt::printfln("Binary-Frame recieved by client: {}:{} (fd={}, len={})",
