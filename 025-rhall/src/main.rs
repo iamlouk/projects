@@ -24,7 +24,10 @@ fn main() {
     let mut parser = Parser::new(&mut lexer);
     let mut node = parser.parse_all().expect("parsing failure");
     println!("# AST: {}", node.as_ref());
-    println!("# TYP: {}", node.typecheck(&mut env, None).expect("typecheck failure"));
+    println!(
+        "# TYP: {}",
+        node.typecheck(&mut env, None).expect("typecheck failure")
+    );
 
     match env.eval(node.as_ref()) {
         Ok(val) => println!("{}", val),
@@ -47,9 +50,10 @@ mod test {
             let (expected, name) = match entry {
                 Ok(entry) if entry.file_name().to_str().unwrap().ends_with(".expected") => (
                     std::fs::read_to_string(entry.path()).unwrap(),
-                    entry.file_name().into_string().unwrap()),
+                    entry.file_name().into_string().unwrap(),
+                ),
                 Ok(_) => continue,
-                Err(e) => panic!("{:?}", e)
+                Err(e) => panic!("{:?}", e),
             };
             let name = name.strip_suffix(".expected").unwrap();
             path.push(name.to_string() + ".dhall");
@@ -60,7 +64,9 @@ mod test {
             let mut parser = Parser::new(&mut lexer);
             let mut example = parser.parse_all().expect("parsing failed");
 
-            example.typecheck(&mut env, None).expect("type check failed");
+            example
+                .typecheck(&mut env, None)
+                .expect("type check failed");
 
             let res = format!("{}", env.eval(&example).expect("evaluation failed"));
             assert_eq!(expected.trim(), res.trim());
