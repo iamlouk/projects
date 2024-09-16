@@ -215,6 +215,18 @@ Tags: __*Hare*__, __*B-Tree*__
 
 Working B-Tree with variable key and value sizes, but currently without persistence or deletion. I plan on maybe extending this impl. to a basic persistent key-value store. There are memory leaks etc. in the currnet impl and I know that it is shit, but it was fun to implement a copy-on-write B-Tree and I designed it so that it can be extended for persistence etc.. Also, node-splitting and all of that works.
 
+### 037: [SIMD stuff](./037-simd-stuff/)
+
+Tags: __*C*__, __*SIMD*__
+
+Just some experiments with using SIMD to parse text, specifically big integers in base 10.
+
+### 038: [Shitty C](./038-shittyc/)
+
+Tags: __*C*__, __*Rust*__, __*Compiler*__
+
+A extremely shitty compiler for a C subset. Very few features for now, but some basic stuff works. Needs a lot more stuff to become even close to useful and more tests. The lexer works. The preprocessor has support for `#include` and `#define FOO` (but not for macros with macro parameters). The parser and typechecker is decent (no globals except functions, no `goto`/`continue`/`break`) but far from done. The ISel/CodeGen is extremely unfinished but the basic design should work. It works on the AST directly, there is no IR, and has for now no proper reg. allocation.
+
 ## Future Ideas:
 
 - A REDIS clone (using epoll etc), maybe in Rust?
@@ -229,4 +241,4 @@ Working B-Tree with variable key and value sizes, but currently without persiste
 - A simple markdown->HTML transpiler?
 - Something like [simdjson](https://github.com/simdjson/simdjson) but with AArch64 SVE?
 - Something like a compressed bitmap ([see here](https://github.com/RoaringBitmap/RoaringBitmap))?
-
+- A syntax highlighter that generates HTML?
