@@ -1,4 +1,4 @@
-use std::fmt::Write;
+use std::fmt;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::core::{Error, SLoc, Type};
@@ -79,12 +79,19 @@ pub enum Node {
     Lambda {
         sloc: SLoc,
         typ: Type,
-        args: Vec<(Rc<str>, Type)>,
+        args: Vec<(Rc<str>, Rc<Type>)>,
         body: NodeRef,
     },
+    Forall {
+        sloc: SLoc,
+        typ: Type,
+        argtypes: Vec<(Rc<str>, NodeRef)>,
+        rettyp: NodeRef
+    }
 }
 
 impl Node {
+    #[allow(unused)]
     pub fn get_type(&self) -> &Type {
         match self {
             Node::Id { typ, .. } => typ,
@@ -97,91 +104,56 @@ impl Node {
             Node::IfThenElse { typ, .. } => typ,
             Node::LetIn { typ, .. } => typ,
             Node::Lambda { typ, .. } => typ,
+            Node::Forall { typ, .. } => typ,
         }
     }
+}
 
-    pub fn stringify(&self, ident: &str, buf: &mut String) -> Result<(), std::fmt::Error> {
+impl std::fmt::Display for Node {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Node::Id { name, .. } => buf.write_str(name),
-            Node::Integer { value, .. } => write!(buf, "{:#x}", value),
-            Node::Boolean { value, .. } => buf.write_str(if *value { "true" } else { "false" }),
-            Node::String { value, .. } => write!(buf, "{:?}", value.as_ref()),
-            Node::Invert { op0, .. } => {
-                buf.write_str("~")?;
-                op0.as_ref().borrow().stringify(ident, buf)?;
-                buf.write_str("")
-            }
-            Node::BinOp { op, lhs, rhs, .. } => {
-                buf.write_char('(')?;
-                lhs.as_ref().borrow().stringify(ident, buf)?;
-                buf.write_str(match op {
-                    BinOp::Add => ") + (",
-                    BinOp::Sub => ") - (",
-                    BinOp::Mul => ") * (",
-                    BinOp::Div => ") / (",
-                    BinOp::And => ") & (",
-                    BinOp::Or => ") | (",
-                    BinOp::EQ => ") == (",
-                    BinOp::NE => ") != (",
-                    BinOp::LT => ") < (",
-                    BinOp::LE => ") <= (",
-                    BinOp::GT => ") > (",
-                    BinOp::GE => ") >= (",
-                })?;
-                rhs.as_ref().borrow().stringify(ident, buf)?;
-                buf.write_char(')')
-            }
+            Node::Id { name, .. } => f.write_str(name.as_ref()),
+            Node::Integer { value, .. } => write!(f, "{}", value),
+            Node::Boolean { value: true, .. } => f.write_str("⊤"),
+            Node::Boolean { value: false, .. } => f.write_str("⊥"),
+            Node::String { value, .. } => write!(f, "{:?}", value.as_ref()),
+            Node::Invert { op0, .. } => write!(f, "(~{})", op0.borrow()),
+            Node::BinOp { op, lhs, rhs, .. } =>
+                write!(f, "({} {} {})",
+                    lhs.borrow(),
+                    match op { BinOp::Add => "+", BinOp::Sub => "-", BinOp::Mul => "*",
+                               BinOp::Div => "*", BinOp::And => "&", BinOp::Or => "|",
+                               BinOp::EQ => "==", BinOp::NE => "!=", BinOp::LT => "<",
+                               BinOp::LE => "<=", BinOp::GT => ">", BinOp::GE => "<=" },
+                    rhs.borrow()),
             Node::Call { callable, args, .. } => {
-                callable.as_ref().borrow().stringify(ident, buf)?;
-                buf.write_char('(')?;
+                write!(f, "{}(", callable.as_ref().borrow())?;
                 for (i, arg) in args.iter().enumerate() {
-                    if i != 0 {
-                        buf.write_str(", ")?;
-                    }
-                    arg.as_ref().borrow().stringify(ident, buf)?;
+                    if i != 0 { write!(f, ", ")?; }
+                    write!(f, "{}", arg.borrow())?;
                 }
-                buf.write_char(')')
-            }
-            Node::IfThenElse { op0, op1, op2, .. } => {
-                buf.write_str("if (")?;
-                op0.as_ref().borrow().stringify(ident, buf)?;
-                buf.write_str(")\n")?;
-                buf.write_str(ident)?;
-                buf.write_str("then (")?;
-                let newident = ident.to_owned() + "\t";
-                op1.as_ref().borrow().stringify(newident.as_str(), buf)?;
-                buf.write_str(")\n")?;
-                buf.write_str(ident)?;
-                buf.write_str("else (")?;
-                op2.as_ref().borrow().stringify(newident.as_str(), buf)?;
-                buf.write_str(")")
-            }
-            Node::LetIn {
-                name, value, body, ..
-            } => {
-                buf.write_str("let ")?;
-                buf.write_str(name.as_ref())?;
-                buf.write_str(" = ")?;
-                let newident = ident.to_owned() + "\t";
-                value.as_ref().borrow().stringify(newident.as_str(), buf)?;
-                buf.write_str("\n")?;
-                buf.write_str(ident)?;
-                buf.write_str("in ")?;
-                body.as_ref().borrow().stringify(newident.as_str(), buf)
-            }
+                write!(f, ")")
+            },
+            Node::IfThenElse { op0, op1, op2, .. } =>
+                write!(f, "if ({}) then ({}) else ({})", op0.borrow(), op1.borrow(), op2.borrow()),
+            Node::LetIn { name, value, body, .. } =>
+                write!(f, "let {} = {} in {}", name.as_ref(), value.borrow(), body.borrow()),
             Node::Lambda { args, body, .. } => {
-                buf.write_str("λ(")?;
+                write!(f, "λ(")?;
                 for (i, (name, typ)) in args.iter().enumerate() {
-                    if i != 0 {
-                        buf.write_str(", ")?;
-                    }
-                    write!(buf, "{}: {}", name.as_ref(), typ)?;
+                    if i != 0 { write!(f, ", ")?; }
+                    write!(f, "{}: {}", name.as_ref(), typ.as_ref())?;
                 }
-                buf.write_str(") ->\n")?;
-                let newident = ident.to_owned() + "\t";
-                buf.write_str(newident.as_str())?;
-                body.as_ref().borrow().stringify(newident.as_str(), buf)
-            }
+                write!(f, ") -> {}", body.borrow())
+            },
+            Node::Forall { argtypes, rettyp, .. } => {
+                write!(f, "∀(")?;
+                for (i, (name, typ)) in argtypes.iter().enumerate() {
+                    if i != 0 { write!(f, ", ")?; }
+                    write!(f, "{}: {}", name.as_ref(), typ.borrow())?;
+                }
+                write!(f, ") -> {}", rettyp.borrow())
+            },
         }
     }
 }
@@ -216,6 +188,19 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn expect_id(&mut self) -> Result<(SLoc, Rc<str>), Error> {
+        match self.lexer.next().ok_or(Error::UnexpectedEOF)?? {
+            (sloc, Tok::Id(name)) => Ok((sloc, name)),
+            (sloc, t) => {
+                Err(Error::ExpectedToken {
+                    sloc,
+                    expected: Tok::Id(Rc::from("<whatever>")),
+                    found: t,
+                })
+            }
+        }
+    }
+
     fn consume_if(&mut self, tok: Tok) -> bool {
         if let Some(Ok((sloc, t))) = self.lexer.peek() {
             self.consumed_sloc = sloc;
@@ -225,16 +210,6 @@ impl<'a> Parser<'a> {
             }
         }
         false
-    }
-
-    fn binop_precedence(binop: BinOp) -> usize {
-        match binop {
-            BinOp::Mul | BinOp::Div => 100,
-            BinOp::Add | BinOp::Sub => 90,
-            BinOp::EQ | BinOp::NE | BinOp::LT | BinOp::LE | BinOp::GT | BinOp::GE => 80,
-            BinOp::And => 70,
-            BinOp::Or => 60,
-        }
     }
 
     pub fn parse_all(&mut self) -> Result<NodeRef, Error> {
@@ -251,7 +226,7 @@ impl<'a> Parser<'a> {
 
     fn parse(&mut self) -> Result<NodeRef, Error> {
         let (sloc, tok) = self.lexer.peek().ok_or(Error::UnexpectedEOF)??;
-        if Tok::If == tok {
+        if tok == Tok::If {
             self.lexer.next();
             let op0 = self.parse_expr1()?;
             self.expect_token(Tok::Then)?;
@@ -269,17 +244,7 @@ impl<'a> Parser<'a> {
 
         if tok == Tok::Let {
             self.lexer.next();
-            let name = match self.lexer.next().ok_or(Error::UnexpectedEOF)?? {
-                (_, Tok::Id(name)) => name,
-                (sloc, found) => {
-                    return Err(Error::ExpectedToken {
-                        sloc,
-                        expected: Tok::Id(Rc::from("<whatever>")),
-                        found,
-                    })
-                }
-            };
-
+            let (_, name) = self.expect_id()?;
             self.expect_token(Tok::Assign)?;
             let value = self.parse_expr1()?;
 
@@ -301,105 +266,51 @@ impl<'a> Parser<'a> {
         self.parse_expr1()
     }
 
-    fn parse_expr1(&mut self) -> Result<Rc<RefCell<Node>>, Error> {
-        let mut lhs = self.parse_expr0()?;
-        loop {
-            if self.consume_if(Tok::Plus) {
-                let rhs = self.parse_expr0()?;
-                lhs = Rc::new(RefCell::new(Node::BinOp {
-                    sloc: self.consumed_sloc,
-                    typ: Type::Unresolved(None),
-                    op: BinOp::Add,
-                    lhs,
-                    rhs,
-                    iscmp: false,
-                }))
-            } else if self.consume_if(Tok::Minus) {
-                let rhs = self.parse_expr0()?;
-                lhs = Rc::new(RefCell::new(Node::BinOp {
-                    sloc: self.consumed_sloc,
-                    typ: Type::Unresolved(None),
-                    op: BinOp::Sub,
-                    lhs,
-                    rhs,
-                    iscmp: false,
-                }))
-            } else if self.consume_if(Tok::Star) {
-                let rhs = self.parse_expr0()?;
-                lhs = Rc::new(RefCell::new(Node::BinOp {
-                    sloc: self.consumed_sloc,
-                    typ: Type::Unresolved(None),
-                    op: BinOp::Mul,
-                    lhs,
-                    rhs,
-                    iscmp: false,
-                }))
-            } else if self.consume_if(Tok::Slash) {
-                let rhs = self.parse_expr0()?;
-                lhs = Rc::new(RefCell::new(Node::BinOp {
-                    sloc: self.consumed_sloc,
-                    typ: Type::Unresolved(None),
-                    op: BinOp::Div,
-                    lhs,
-                    rhs,
-                    iscmp: false,
-                }))
-            } else if self.consume_if(Tok::Ampersand) {
-                let rhs = self.parse_expr0()?;
-                lhs = Rc::new(RefCell::new(Node::BinOp {
-                    sloc: self.consumed_sloc,
-                    typ: Type::Unresolved(None),
-                    op: BinOp::And,
-                    lhs,
-                    rhs,
-                    iscmp: false,
-                }))
-            } else if self.consume_if(Tok::Pipe) {
-                let rhs = self.parse_expr0()?;
-                lhs = Rc::new(RefCell::new(Node::BinOp {
-                    sloc: self.consumed_sloc,
-                    typ: Type::Unresolved(None),
-                    op: BinOp::Or,
-                    lhs,
-                    rhs,
-                    iscmp: false,
-                }))
-            } else if self.consume_if(Tok::Equal) {
-                let rhs = self.parse_expr0()?;
-                lhs = Rc::new(RefCell::new(Node::BinOp {
-                    sloc: self.consumed_sloc,
-                    typ: Type::Unresolved(None),
-                    op: BinOp::EQ,
-                    lhs,
-                    rhs,
-                    iscmp: true,
-                }))
-            } else if self.consume_if(Tok::Lower) {
-                let rhs = self.parse_expr0()?;
-                lhs = Rc::new(RefCell::new(Node::BinOp {
-                    sloc: self.consumed_sloc,
-                    typ: Type::Unresolved(None),
-                    op: BinOp::LT,
-                    lhs,
-                    rhs,
-                    iscmp: true,
-                }))
-            } else if self.consume_if(Tok::LowerOrEqual) {
-                let rhs = self.parse_expr0()?;
-                lhs = Rc::new(RefCell::new(Node::BinOp {
-                    sloc: self.consumed_sloc,
-                    typ: Type::Unresolved(None),
-                    op: BinOp::LE,
-                    lhs,
-                    rhs,
-                    iscmp: true,
-                }))
-            } else {
-                break;
-            }
+    /* Returns (binop, precedence, is_left_associative, is_compare). */
+    fn binop_precedence(tok: &Tok) -> Option<(BinOp, usize, bool, bool)> {
+        match tok {
+            Tok::Star => Some((BinOp::Mul, 100, true, false)),
+            Tok::Slash => Some((BinOp::Div, 100, true, false)),
+            Tok::Plus => Some((BinOp::Add, 90, true, false)),
+            Tok::Minus => Some((BinOp::Sub, 90, true, false)),
+            Tok::Equal => Some((BinOp::EQ, 80, true, true)),
+            Tok::NotEqual => Some((BinOp::NE, 80, true, true)),
+            Tok::Lower => Some((BinOp::LT, 80, true, true)),
+            Tok::LowerOrEqual => Some((BinOp::LE, 80, true, true)),
+            Tok::Greater => Some((BinOp::GT, 80, true, true)),
+            Tok::GreaterOrEqual => Some((BinOp::GE, 80, true, true)),
+            Tok::Ampersand => Some((BinOp::And, 70, true, false)),
+            Tok::Pipe => Some((BinOp::Or, 70, true, false)),
+            _ => None
         }
+    }
 
+    fn parse_binop(&mut self, min_prec: usize) -> Result<Rc<RefCell<Node>>, Error> {
+        let mut lhs = self.parse_expr0()?;
+        while let Some(Ok((sloc, tok))) = self.lexer.peek() {
+            let (binop, prec, leftassoc, iscmp) = match Self::binop_precedence(&tok) {
+                Some(t) if t.1 >= min_prec => t,
+                _ => break
+            };
+
+            self.lexer.next().unwrap().unwrap();
+
+            let next_min_prev = if leftassoc { prec + 1 } else { prec };
+            let rhs = self.parse_binop(next_min_prev)?;
+            lhs = Rc::new(RefCell::new(Node::BinOp {
+                sloc,
+                typ: Type::Unresolved(None),
+                op: binop,
+                lhs,
+                rhs,
+                iscmp
+            }));
+        }
         Ok(lhs)
+    }
+
+    fn parse_expr1(&mut self) -> Result<Rc<RefCell<Node>>, Error> {
+        self.parse_binop(0)
     }
 
     fn parse_expr0(&mut self) -> Result<Rc<RefCell<Node>>, Error> {
@@ -473,26 +384,16 @@ impl<'a> Parser<'a> {
                 self.expect_token(Tok::LParen)?;
                 let mut args = vec![];
                 loop {
-                    let name = match self.lexer.next().ok_or(Error::UnexpectedEOF)?? {
-                        (_, Tok::Id(name)) => name,
-                        (sloc, t) => {
-                            return Err(Error::ExpectedToken {
-                                sloc,
-                                expected: Tok::Id(Rc::from("<whatever>")),
-                                found: t,
-                            })
-                        }
-                    };
-
+                    let (_, name) = self.expect_id()?;
                     self.expect_token(Tok::Colon)?;
                     let typannot = self.parse()?;
-                    args.push((name, Type::Unresolved(Some(typannot))));
+                    args.push((name, Rc::new(Type::Unresolved(Some(typannot)))));
 
-                    if self.consume_if(Tok::RParen) {
+                    if !self.consume_if(Tok::Comma) {
                         break;
                     }
-                    self.expect_token(Tok::Comma)?;
                 }
+                self.expect_token(Tok::RParen)?;
                 self.expect_token(Tok::Arrow)?;
                 let body = self.parse()?;
                 Node::Lambda {
@@ -501,7 +402,25 @@ impl<'a> Parser<'a> {
                     args,
                     body,
                 }
-            }
+            },
+            Tok::Forall => {
+                self.expect_token(Tok::LParen)?;
+                let mut argtypes = vec![];
+                loop {
+                    let (_, name) = self.expect_id()?;
+                    self.expect_token(Tok::Colon)?;
+
+                    let argtyp = self.parse()?;
+                    argtypes.push((name, argtyp));
+                    if !self.consume_if(Tok::Comma) {
+                        break;
+                    }
+                }
+                self.expect_token(Tok::RParen)?;
+                self.expect_token(Tok::Arrow)?;
+                let rettyp = self.parse()?;
+                Node::Forall { sloc, typ: Type::Unresolved(None), argtypes, rettyp }
+            },
             _ => unimplemented!(),
         })))
     }
@@ -536,7 +455,7 @@ mod tests {
                 (match clone_node(&value) {
                     Node::Lambda { args, body, .. } if args.len() == 1 =>
                         (match &args[0] {
-                            (name, typ) if name.as_ref() == "x" => match typ {
+                            (name, typ) if name.as_ref() == "x" => match typ.as_ref() {
                                 Type::Unresolved(Some(id)) => match &*id.borrow() {
                                     Node::Id { name, .. } if name.as_ref() == "Int" => true,
                                     _ => false,

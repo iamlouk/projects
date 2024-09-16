@@ -22,6 +22,7 @@ fn main() {
     let mut lexer = Lexer::new(buf.as_str(), 0, &mut spool);
     let mut parser = Parser::new(&mut lexer);
     let node = parser.parse_all().expect("parsing failure");
+    println!("# AST: {}", node.as_ref().borrow());
 
     let mut env = Env::new();
     match env.eval(&node) {

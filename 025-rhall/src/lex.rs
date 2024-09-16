@@ -47,24 +47,11 @@ pub enum Tok {
     Ampersand,
     Pipe,
     Equal,
+    NotEqual,
     Lower,
     LowerOrEqual,
-}
-
-impl Tok {
-    pub fn id(&self) -> Option<&str> {
-        match self {
-            Self::Id(s) => Some(s.as_ref()),
-            _ => None,
-        }
-    }
-
-    pub fn str(&self) -> Option<&str> {
-        match self {
-            Self::String(s) => Some(s.as_ref()),
-            _ => None,
-        }
-    }
+    Greater,
+    GreaterOrEqual
 }
 
 impl<'a> Lexer<'a> {
@@ -112,7 +99,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn skip_whitespace(&mut self) -> Option<char> {
-        while let Some(c) = self.chars.next() {
+        'outer: while let Some(c) = self.chars.next() {
             if c == '\n' {
                 self.sloc.line += 1;
                 self.sloc.col = 1;
@@ -135,7 +122,15 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            if c == '/' && self.chars.peek().cloned() == Some('*') {}
+            if c == '/' && self.chars.peek().cloned() == Some('*') {
+                self.chars.next();
+                while let Some(c) = self.next_char() {
+                    if c == '*' && self.chars.peek().cloned() == Some('/') {
+                        self.chars.next();
+                        continue 'outer;
+                    }
+                }
+            }
 
             self.sloc.col += 1;
             return Some(c);
@@ -266,6 +261,13 @@ impl<'a> std::iter::Iterator for Lexer<'a> {
                 }
                 _ => Ok((self.sloc, Tok::Assign)),
             },
+            '!' => match self.chars.peek() {
+                Some('=') => {
+                    self.next_char();
+                    Ok((self.sloc, Tok::NotEqual))
+                },
+                _ => todo!()
+            },
             '<' => match self.chars.peek() {
                 Some('=') => {
                     self.next_char();
@@ -273,11 +275,19 @@ impl<'a> std::iter::Iterator for Lexer<'a> {
                 }
                 _ => Ok((self.sloc, Tok::Lower)),
             },
+            '>' => match self.chars.peek() {
+                Some('=') => {
+                    self.next_char();
+                    Ok((self.sloc, Tok::GreaterOrEqual))
+                }
+                _ => Ok((self.sloc, Tok::Greater))
+            },
 
             '\\' | 'λ' => Ok((self.sloc, Tok::Lambda)),
             '∀' => Ok((self.sloc, Tok::Forall)),
             '⊤' => Ok((self.sloc, Tok::Boolean(true))),
             '⊥' => Ok((self.sloc, Tok::Boolean(false))),
+            '→' => Ok((self.sloc, Tok::Arrow)),
 
             '0' => match self.chars.peek().cloned() {
                 Some('b') => self
@@ -360,6 +370,7 @@ impl<'a> std::iter::Iterator for Lexer<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::assert_matches::assert_matches;
 
     #[test]
     fn lexing() {
@@ -367,23 +378,21 @@ mod test {
         let mut string_pool = std::collections::HashSet::<Rc<str>>::new();
         let mut lexer = Lexer::new(input, 0, &mut string_pool);
 
-        // println!("{:?}", lexer.collect::<Vec<_>>());
-
-        assert!(lexer.next().unwrap().unwrap().1 == Tok::Let);
-        assert!(lexer.next().unwrap().unwrap().1.id() == Some("x"));
-        assert!(lexer.next().unwrap().unwrap().1 == Tok::Assign);
-        assert!(lexer.next().unwrap().unwrap().1 == Tok::LBrace);
-        assert!(lexer.next().unwrap().unwrap().1 == Tok::Integer(42));
-        assert!(lexer.next().unwrap().unwrap().1 == Tok::RBrace);
-        assert!(lexer.next().unwrap().unwrap().1 == Tok::In);
-        assert!(lexer.next().unwrap().unwrap().1 == Tok::Lambda);
-        assert!(lexer.next().unwrap().unwrap().1 == Tok::LParen);
-        assert!(lexer.next().unwrap().unwrap().1.id() == Some("y"));
-        assert!(lexer.next().unwrap().unwrap().1 == Tok::Colon);
-        assert!(lexer.next().unwrap().unwrap().1.id() == Some("Str"));
-        assert!(lexer.next().unwrap().unwrap().1 == Tok::RParen);
-        assert!(lexer.next().unwrap().unwrap().1 == Tok::Arrow);
-        assert!(lexer.next().unwrap().unwrap().1.str() == Some("Hello, World!"));
-        assert!(lexer.next().is_none());
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::Let))));
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::Id(id)))) if id.as_ref() == "x");
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::Assign))));
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::LBrace))));
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::Integer(42)))));
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::RBrace))));
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::In))));
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::Lambda))));
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::LParen))));
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::Id(id)))) if id.as_ref() == "y");
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::Colon))));
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::Id(id)))) if id.as_ref() == "Str");
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::RParen))));
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::Arrow))));
+        assert_matches!(lexer.next(), Some(Ok((_, Tok::String(str)))) if str.as_ref() == "Hello, World!");
+        assert_matches!(lexer.next(), None);
     }
 }
