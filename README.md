@@ -233,13 +233,17 @@ Tags: __*JS*__, __*Deno*__
 
 A project I started mostly to try out the Deno JS runtime, do a bit of TypeScript, and to play with regular expressions. Currently, only C is supported, and the output must be HTML.
 
+## 040: [CHIP-8 Emulator](./040-chip8/)
+
+Tags: __*Chip-8*__, __*Rust*__, __*Emulator*__
+
+A [Chip-8](http://devernay.free.fr/hacks/chip8/C8TECH10.HTM) emulator for retro games in rust. The emulator logic is separated from the UI, for now, there only is a `crossterm`-based terminal UI. I think I might add a WASM based Web-UI as well later on. Tetris and [this test ROM](https://github.com/corax89/chip8-test-rom/tree/master) work.
+
 ## Future Ideas:
 
 - A REDIS clone (using epoll etc), maybe in Rust?
 - A [QBE](https://c9x.me/compile/) to/from LLVM-IR or to/from GCC GIMPLE translation?
 - A small simple compiler backend: ISel, Register Allocation, ...
-- A C preprocessor
-- A B-Tree or a persistent key-value store
 - A Hare libgccjit backend using [hare::parse](https://docs.harelang.org/hare/parse) as frontend?
 - A websocket-based shared canvas for [louknr.net](https://louknr.net).
 - A super super simple linker? (for ELF, but with only the most basic features possible?)
@@ -247,4 +251,4 @@ A project I started mostly to try out the Deno JS runtime, do a bit of TypeScrip
 - A simple markdown->HTML transpiler?
 - Something like [simdjson](https://github.com/simdjson/simdjson) but with AArch64 SVE?
 - Something like a compressed bitmap ([see here](https://github.com/RoaringBitmap/RoaringBitmap))?
-- A syntax highlighter that generates HTML?
+- A mini OS for the RISC-V virt `QEMU` platform?
