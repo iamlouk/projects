@@ -1,3 +1,7 @@
+#![feature(unsized_tuple_coercion)]
+#![feature(sync_unsafe_cell)]
+#![feature(trait_upcasting)]
+#![feature(downcast_unchecked)]
 #![feature(assert_matches)]
 #![allow(clippy::type_complexity)]
 
@@ -7,6 +11,7 @@ mod ast;
 mod core;
 mod eval;
 mod lex;
+mod gc;
 
 use eval::{eval, Runtime, Scope};
 
@@ -52,9 +57,13 @@ fn main() {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::{io::Write, time::Duration};
 
     #[test]
     fn examples() {
+        /* Ugly hack to get the other tests to finish first: */
+        std::thread::sleep(Duration::from_millis(100));
+
         let rt = Runtime::new();
 
         use std::path::PathBuf;
@@ -70,6 +79,7 @@ mod test {
                 Err(e) => panic!("{:?}", e),
             };
             let name = name.strip_suffix(".expected").unwrap();
+            write!(std::io::stdout().lock(), "\t -> example/{}.dhall\n", name).expect("I/O failed");
             path.push(name.to_string() + ".dhall");
             let sourcecode = std::fs::read_to_string(&path).unwrap();
             eprintln!("testing: {}", name);

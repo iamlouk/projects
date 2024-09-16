@@ -46,9 +46,9 @@ pub enum Error {
 #[derive(Debug, Clone)]
 pub enum Type {
     Placeholder(Rc<str>),
-    Boolean,
-    Integer,
-    String,
+    Bool,
+    Int,
+    Str,
     Any,
     TypeOfType,
     TypeOf(Rc<Type>),
@@ -61,9 +61,9 @@ impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Type::Placeholder(name) => write!(f, "{}", name.as_ref()),
-            Type::Boolean => write!(f, "Bool"),
-            Type::Integer => write!(f, "Int"),
-            Type::String => write!(f, "Str"),
+            Type::Bool => write!(f, "Bool"),
+            Type::Int => write!(f, "Int"),
+            Type::Str => write!(f, "Str"),
             Type::Any => write!(f, "Any"),
             Type::TypeOfType => write!(f, "Type"),
             Type::TypeOf(t) => write!(f, "typeof({})", t.as_ref()),
@@ -101,9 +101,9 @@ impl PartialEq for Type {
             // is not ok, one would need to check that every position a ID is used in the lhs,
             // a different but equal in all positions ID is used in the rhs.
             (Type::Placeholder(tp1), Type::Placeholder(tp2)) => tp1.as_ref() == tp2.as_ref(),
-            (Type::Boolean, Type::Boolean) => true,
-            (Type::Integer, Type::Integer) => true,
-            (Type::String, Type::String) => true,
+            (Type::Bool, Type::Bool) => true,
+            (Type::Int, Type::Int) => true,
+            (Type::Str, Type::Str) => true,
             (Type::TypeOfType, Type::TypeOfType) => true,
             (Type::TypeOf(t1), Type::TypeOf(t2)) => t1.as_ref() == t2.as_ref(),
             (Type::Lambda(args1, rettyp1), Type::Lambda(args2, rettyp2)) => {
@@ -135,9 +135,9 @@ impl Type {
         match self.as_ref() {
             Type::Placeholder(placeholder) if placeholder.as_ref() == name => subst.clone(),
             Type::Placeholder(_) => self.clone(),
-            Type::Boolean => self.clone(),
-            Type::Integer => self.clone(),
-            Type::String => self.clone(),
+            Type::Bool => self.clone(),
+            Type::Int => self.clone(),
+            Type::Str => self.clone(),
             Type::Any => self.clone(),
             Type::TypeOfType => self.clone(),
             Type::TypeOf(t) => Rc::new(Type::TypeOf(t.subst(name, subst))),
@@ -231,9 +231,9 @@ impl Value {
     pub fn get_type(&self) -> Rc<Type> {
         match self {
             Value::Pseudo(t) => t.clone(),
-            Value::Bool(_) => Rc::new(Type::Boolean),
-            Value::Int(_) => Rc::new(Type::Integer),
-            Value::Str(_) => Rc::new(Type::String),
+            Value::Bool(_) => Rc::new(Type::Bool),
+            Value::Int(_) => Rc::new(Type::Int),
+            Value::Str(_) => Rc::new(Type::Str),
             Value::Type(t) => {
                 if **t == Type::TypeOfType {
                     Rc::new(Type::TypeOfType)
