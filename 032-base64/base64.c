@@ -27,7 +27,7 @@ static size_t base64_encode_chunk(size_t n, uint8_t input[n], bool done, FILE *d
   for (size_t c = 0; c < chunks; c++) {
     uint32_t b1 = input[c * 3 + 0] & 0xff, b2 = input[c * 3 + 1] & 0xff,
              b3 = input[c * 3 + 2] & 0xff;
-    uint8_t c1 = base64_chars[(b1 >> 2) & 0x3f];
+    uint8_t c1 = base64_chars[                      (b1 >> 2) & 0x3f];
     uint8_t c2 = base64_chars[((b1 << 4) & 0x30) | ((b2 >> 4) & 0x0f)];
     uint8_t c3 = base64_chars[((b2 << 2) & 0x3c) | ((b3 >> 6) & 0x03)];
     uint8_t c4 = base64_chars[((b3 & 0x3f))];
