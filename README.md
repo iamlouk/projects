@@ -219,7 +219,7 @@ Working B-Tree with variable key and value sizes, but currently without persiste
 
 Tags: __*C*__, __*SIMD*__
 
-Just some experiments with using SIMD to parse text, specifically big integers in base 10.
+Just some experiments with using SIMD to parse text, specifically big integers in base 10 and encoding data into base64 using SVE.
 
 ### 038: [Shitty C](./038-shittyc/)
 
@@ -257,3 +257,4 @@ A extremely simple and shitty markdown subset parser and transpiler targeting HT
 - Something like [simdjson](https://github.com/simdjson/simdjson) but with AArch64 SVE?
 - Something like a compressed bitmap ([see here](https://github.com/RoaringBitmap/RoaringBitmap))?
 - A mini OS for the RISC-V virt `QEMU` platform?
+- A http 1.1 server (I already did that, but:) with `Connection: Keep-Alive` and chuncked transfer encoding and so on support.
