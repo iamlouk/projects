@@ -245,6 +245,14 @@ Tags: __*JS*__, __*Deno*__, __*Markdown*__
 
 A extremely simple and shitty markdown subset parser and transpiler targeting HTML.
 
+## 042: [WASM2libgccjit](./042-wasm2libgccjit/) *WIP!*
+
+Tags: __*Rust*__, __*WASM*__, __*libgccjit*__
+
+_Work in progress!_
+
+A WASM binary format parser, with the goal of adding a code generator.
+
 ## 043: [Warnings for unaligned packed structs](./043-warn-packed/)
 
 Tags: __*C++*__, __*Clang*__
