@@ -245,6 +245,12 @@ Tags: __*JS*__, __*Deno*__, __*Markdown*__
 
 A extremely simple and shitty markdown subset parser and transpiler targeting HTML.
 
+## 043: [Warnings for unaligned packed structs](./043-warn-packed/)
+
+Tags: __*C++*__, __*Clang*__
+
+A utility plugin for debugging unaligned memory accesses because of `__attribute__((packed))` in structures. Probably not very useful in general. Should probably be a `clang-tidy` rule instead, but I was unable to find a way to do this as plugin. This does the job.
+
 ## Future Ideas:
 
 - A REDIS clone (using epoll etc), maybe in Rust?
