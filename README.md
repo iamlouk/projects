@@ -265,6 +265,10 @@ Tags: __*LLVM*__
 
 A shitty implementation of common subexpression elimination in LLVM.
 
+## 045: Advent of Code 2024
+
+Lets see how far I come this time, and how many languages I use.
+
 ## Future Ideas:
 
 - A REDIS clone (using epoll etc), maybe in Rust?
