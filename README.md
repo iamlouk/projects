@@ -259,6 +259,12 @@ Tags: __*C++*__, __*Clang*__
 
 A utility plugin for debugging unaligned memory accesses because of `__attribute__((packed))` in structures. Probably not very useful in general. Should probably be a `clang-tidy` rule instead, but I was unable to find a way to do this as plugin. This does the job.
 
+## 044: Shitty Common-Subexpression-Elimination
+
+Tags: __*LLVM*__
+
+A shitty implementation of common subexpression elimination in LLVM.
+
 ## Future Ideas:
 
 - A REDIS clone (using epoll etc), maybe in Rust?
