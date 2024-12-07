@@ -1,4 +1,4 @@
-.PHONY: day01 day02 day03 day04 day05
+.PHONY: day01 day02 day03 day04 day05 day06
 
 day01: ./01-input.txt
 	# A 100% https://jqlang.github.io/jq solution. The range chunk hack was found on stack overflow.
@@ -16,3 +16,6 @@ day04: ./04.py ./04-input.txt
 
 day05: ./05.go ./05-input.txt
 	go run ./05.go < ./05-input.txt
+
+day06: ./06.py ./06-input.txt
+	python ./06.py < ./06-input.txt
