@@ -1,0 +1,5 @@
+# Environment variables (contains API keys)
+.env
+
+# Build artifacts
+lllm
