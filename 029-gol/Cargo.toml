@@ -10,3 +10,5 @@ opt-level = 1
 sdl2 = "*"
 rand = "*"
 rayon = "*"
+lazy_static = "*"
+clap = { version = "4.0", features = ["derive"] }
