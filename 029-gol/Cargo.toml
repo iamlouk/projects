@@ -6,6 +6,13 @@ edition = "2021"
 [profile.dev]
 opt-level = 1
 
+[profile.release]
+lto = true
+codegen-units = 1
+
+[profile.release.package."*"]
+codegen-units = 16
+
 [dependencies]
 sdl2 = "*"
 rand = "*"

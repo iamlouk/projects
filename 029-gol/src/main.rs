@@ -1,16 +1,16 @@
 #![allow(clippy::manual_range_contains)]
 #![allow(clippy::needless_range_loop)]
-
-use std::i64;
+#![feature(portable_simd)]
 
 use clap::Parser;
 use rayon::prelude::*;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use sdl2::rect::Rect;
+use sdl2::pixels::PixelFormatEnum;
 
 mod colors;
 mod continous;
+mod continuous_vectorized;
 mod forestfire;
 mod game_of_living;
 
@@ -24,27 +24,55 @@ pub trait CACell: Copy + Default + Send + Sync {
         get_cell: impl Fn(i64, i64) -> Self,
         rng: &mut rand::prelude::ThreadRng,
     ) -> Self;
+
+    fn update_frame(
+        old_state: &[[Self; CELLS_Y as usize]; CELLS_X as usize],
+        new_state: &mut [[Self; CELLS_Y as usize]; CELLS_X as usize],
+    ) {
+        new_state
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(x, new_col)| {
+                Self::update_row(&old_state[x], new_col, old_state, x);
+            });
+    }
+
+    fn update_row(
+        old_row: &[Self; CELLS_Y as usize],
+        new_row: &mut [Self; CELLS_Y as usize],
+        old_grid: &[[Self; CELLS_Y as usize]; CELLS_X as usize],
+        y: usize,
+    ) {
+        for (x, cell) in old_row.iter().enumerate() {
+            let mut rng = rand::thread_rng();
+            new_row[x] = cell.update(
+                x as i64,
+                y as i64,
+                |i, j| {
+                    let (i, j) = wrap_idxs(i, j);
+                    old_grid[j][i]
+                },
+                &mut rng,
+            );
+        }
+    }
 }
 
-const CELLS_X: u32 = 450;
-const CELLS_Y: u32 = 450;
+const CELLS_X: u32 = 540;
+const CELLS_Y: u32 = 540;
 
-/// Cellular Automaton type
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum CAType {
-    /// Game of Life variant
     GameOfLiving,
-    /// Forest Fire simulation
     ForestFire,
-    /// Color diffusion
     Colors,
-    /// Continuous CA
     Continuous,
+    ContinuousVectorized,
 }
 
 impl Default for CAType {
     fn default() -> Self {
-        CAType::Continuous
+        CAType::ContinuousVectorized
     }
 }
 
@@ -65,7 +93,7 @@ struct Args {
     threads: usize,
 
     /// CA type to run
-    #[arg(long, value_enum, default_value_t = CAType::Continuous)]
+    #[arg(long, value_enum, default_value_t = CAType::ContinuousVectorized)]
     ca: CAType,
 }
 
@@ -83,17 +111,23 @@ fn wrap_idxs(mut i: i64, mut j: i64) -> (usize, usize) {
     (i as usize, j as usize)
 }
 
-pub fn run<Cell: CACell>() {
+pub fn run<Cell: CACell>(ca_name: &str) {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
     let window = video_subsystem
-        .window("Rust CA", CELLS_X * 1, CELLS_Y * 1)
+        .window(&format!("Rust CA ({})", ca_name), CELLS_X * 1, CELLS_Y * 1)
         .position_centered()
         .build()
         .unwrap();
 
     let mut canvas = window.into_canvas().build().unwrap();
+
+    let texture_creator = canvas.texture_creator();
+    let mut texture = texture_creator
+        .create_texture_streaming(PixelFormatEnum::ARGB8888, CELLS_X, CELLS_Y)
+        .unwrap();
+
     let mut cells_prev = Some(Box::new(
         [[Cell::default(); CELLS_Y as usize]; CELLS_X as usize],
     ));
@@ -132,42 +166,32 @@ pub fn run<Cell: CACell>() {
             }
         }
 
-        // render
+        texture
+            .with_lock(None, |buffer, pitch| {
+                let cells = cells_next.as_ref().unwrap();
+                for y in 0..(CELLS_Y as usize) {
+                    let row = y * pitch;
+                    for x in 0..(CELLS_X as usize) {
+                        let c = cells[x][y].render();
+                        let i = row + x * 4;
+                        // ARGB8888 little-endian byte order: B, G, R, A
+                        buffer[i] = c.b;
+                        buffer[i + 1] = c.g;
+                        buffer[i + 2] = c.r;
+                        buffer[i + 3] = 0xFF;
+                    }
+                }
+            })
+            .unwrap();
         canvas.clear();
-        let cells = cells_next.as_ref().unwrap();
-        for i in 0..(CELLS_X as usize) {
-            for j in 0..(CELLS_Y as usize) {
-                let c = cells[i][j].render();
-                canvas.set_draw_color(c);
-                canvas
-                    .fill_rect(Rect::new(i as i32, j as i32, 1, 1))
-                    .ok()
-                    .unwrap();
-            }
-        }
+        canvas.copy(&texture, None, None).unwrap();
         canvas.present();
 
-        // update
+        // update (whole-frame hook, uses the optimized path where available)
         let old_state: Box<_> = cells_next.take().unwrap();
         let mut new_state: Box<_> = cells_prev.take().unwrap();
 
-        new_state.par_iter_mut().enumerate().for_each(|(i, row)| {
-            let i = i as i64;
-            let mut rng = rand::thread_rng();
-            for j in 0..(CELLS_Y as usize) {
-                let old_cell = old_state[i as usize][j as usize];
-                let new_cell = old_cell.update(
-                    i,
-                    j as i64,
-                    |i, j| {
-                        let (i, j) = wrap_idxs(i, j);
-                        old_state[i][j]
-                    },
-                    &mut rng,
-                );
-                row[j] = new_cell;
-            }
-        });
+        Cell::update_frame(&old_state, &mut new_state);
         cells_prev = Some(old_state);
         cells_next = Some(new_state);
 
@@ -179,7 +203,7 @@ pub fn run<Cell: CACell>() {
             let fps = frames as f32 / elapsed_seconds;
             canvas
                 .window_mut()
-                .set_title(&format!("Rust CA - {:.1} FPS", fps))
+                .set_title(&format!("Rust CA ({}) - {:.1} FPS", ca_name, fps))
                 .unwrap();
             last_fps_update = frame_start;
         }
@@ -217,23 +241,7 @@ fn run_headless<Cell: CACell>(num_frames: u64) -> f64 {
         let old_state = cells_next;
         let mut new_state = cells_prev;
 
-        new_state.par_iter_mut().enumerate().for_each(|(i, row)| {
-            let i = i as i64;
-            let mut rng = rand::thread_rng();
-            for j in 0..(CELLS_Y as usize) {
-                let old_cell = old_state[i as usize][j as usize];
-                let new_cell = old_cell.update(
-                    i,
-                    j as i64,
-                    |i, j| {
-                        let (i, j) = wrap_idxs(i, j);
-                        old_state[i][j]
-                    },
-                    &mut rng,
-                );
-                row[j] = new_cell;
-            }
-        });
+        Cell::update_frame(&old_state, &mut new_state);
 
         cells_prev = old_state;
         cells_next = new_state;
@@ -258,7 +266,7 @@ fn main() {
                 let fps = run_headless::<game_of_living::Cell>(args.frames);
                 println!("Game of Living - avg. FPS: {:.1}", fps);
             } else {
-                run::<game_of_living::Cell>();
+                run::<game_of_living::Cell>("game-of-living");
             }
         }
         CAType::ForestFire => {
@@ -266,7 +274,7 @@ fn main() {
                 let fps = run_headless::<forestfire::Cell>(args.frames);
                 println!("Forest Fire - avg. FPS: {:.1}", fps);
             } else {
-                run::<forestfire::Cell>();
+                run::<forestfire::Cell>("forest-fire");
             }
         }
         CAType::Colors => {
@@ -274,7 +282,7 @@ fn main() {
                 let fps = run_headless::<colors::Cell>(args.frames);
                 println!("Colors - avg. FPS: {:.1}", fps);
             } else {
-                run::<colors::Cell>();
+                run::<colors::Cell>("colors");
             }
         }
         CAType::Continuous => {
@@ -282,7 +290,15 @@ fn main() {
                 let fps = run_headless::<continous::Cell>(args.frames);
                 println!("Continuous - avg. FPS: {:.1}", fps);
             } else {
-                run::<continous::Cell>();
+                run::<continous::Cell>("continuous");
+            }
+        }
+        CAType::ContinuousVectorized => {
+            if args.headless {
+                let fps = run_headless::<continuous_vectorized::Cell>(args.frames);
+                println!("Continuous (SIMD) - avg. FPS: {:.1}", fps);
+            } else {
+                run::<continuous_vectorized::Cell>("continuous-vectorized");
             }
         }
     }

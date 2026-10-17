@@ -23,7 +23,7 @@ lazy_static::lazy_static! {
 
 impl CACell for Cell {
     fn init(&mut self, rng: &mut rand::prelude::ThreadRng, _x: i64, _y: i64) {
-        *self = rng.gen_range((-1.)..1.);
+        *self = rng.gen_range(-1.0..1.0);
     }
 
     fn render(&self) -> sdl2::pixels::Color {
