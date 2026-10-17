@@ -58,8 +58,21 @@ pub trait CACell: Copy + Default + Send + Sync {
     }
 }
 
-const CELLS_X: u32 = 540;
-const CELLS_Y: u32 = 540;
+fn create_grid<Cell: CACell + Default>() -> Box<[[Cell; CELLS_Y as usize]; CELLS_X as usize]> {
+    unsafe {
+        let mut boxed = Box::<[[std::mem::MaybeUninit<Cell>; CELLS_Y as usize]; CELLS_X as usize]>::new_uninit();
+        let ptr = boxed.as_mut_ptr();
+        for i in 0..(CELLS_X as usize) {
+            for j in 0..(CELLS_Y as usize) {
+                (*ptr)[i][j] = std::mem::MaybeUninit::new(Cell::default());
+            }
+        }
+        std::mem::transmute(boxed)
+    }
+}
+
+const CELLS_X: u32 = 750;
+const CELLS_Y: u32 = 750;
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum CAType {
@@ -128,12 +141,8 @@ pub fn run<Cell: CACell>(ca_name: &str) {
         .create_texture_streaming(PixelFormatEnum::ARGB8888, CELLS_X, CELLS_Y)
         .unwrap();
 
-    let mut cells_prev = Some(Box::new(
-        [[Cell::default(); CELLS_Y as usize]; CELLS_X as usize],
-    ));
-    let mut cells_next = Some(Box::new(
-        [[Cell::default(); CELLS_Y as usize]; CELLS_X as usize],
-    ));
+    let mut cells_prev = Some(create_grid::<Cell>());
+    let mut cells_next = Some(create_grid::<Cell>());
 
     {
         let mut rng = rand::thread_rng();
@@ -221,8 +230,8 @@ pub fn run<Cell: CACell>(ca_name: &str) {
 
 /// Headless simulation - just compute, no rendering
 fn run_headless<Cell: CACell>(num_frames: u64) -> f64 {
-    let mut cells_prev = Box::new([[Cell::default(); CELLS_Y as usize]; CELLS_X as usize]);
-    let mut cells_next = Box::new([[Cell::default(); CELLS_Y as usize]; CELLS_X as usize]);
+    let mut cells_prev: Box<[[Cell; CELLS_Y as usize]; CELLS_X as usize]> = create_grid();
+    let mut cells_next: Box<[[Cell; CELLS_Y as usize]; CELLS_X as usize]> = create_grid();
 
     // Initialize
     {
